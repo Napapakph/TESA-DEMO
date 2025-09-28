@@ -21,7 +21,7 @@ body {
 
 .page-shell {
   min-height: 100vh;
-  padding: 24px;
+  padding: clamp(16px, 4vw, 24px);
 }
 
 .dashboard {
@@ -34,7 +34,7 @@ body {
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: 16px;
-  padding: 24px;
+  padding: clamp(18px, 3.5vw, 24px);
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -69,7 +69,7 @@ body {
 }
 
 .map-container {
-  height: 520px;
+  height: clamp(320px, 60vh, 540px);
   border-radius: 14px;
   overflow: hidden;
   border: 1px solid rgba(56, 189, 248, 0.25);
@@ -90,6 +90,7 @@ body {
   margin-left: auto;
   font-size: 0.85rem;
   color: rgba(226, 232, 240, 0.7);
+  text-align: right;
 }
 
 .leaflet-container {
@@ -138,7 +139,7 @@ body {
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: 16px;
-  padding: 18px 20px;
+  padding: clamp(16px, 3vw, 20px);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -391,6 +392,77 @@ button:not(:disabled):hover {
   background: rgba(56, 189, 248, 0.7);
   transform: translateY(18px);
   border-radius: 999px;
+}
+
+@media (max-width: 900px) {
+  .dashboard {
+    gap: 18px;
+  }
+
+  .map-section {
+    gap: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .page-shell {
+    padding: 16px;
+  }
+
+  .action-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .action-toolbar button {
+    width: 100%;
+  }
+
+  .movement-status {
+    margin-left: 0;
+    width: 100%;
+    text-align: center;
+    padding: 4px 0;
+  }
+
+  .map-displays {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .intruder-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .intruder-actions button {
+    width: 100%;
+  }
+
+  .command-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .panel-heading h1 {
+    font-size: 1.25rem;
+  }
+
+  .panel-heading p {
+    font-size: 0.9rem;
+  }
+
+  .map-container {
+    height: clamp(260px, 55vh, 420px);
+  }
+
+  .control-card h2 {
+    font-size: 1rem;
+  }
+
+  button {
+    width: 100%;
+  }
 }
 
 @media (max-width: 1080px) {

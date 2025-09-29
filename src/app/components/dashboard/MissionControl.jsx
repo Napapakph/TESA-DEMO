@@ -9,7 +9,7 @@ export default function MissionControl({ targetInput, onChange, onSubmit, onClea
       targetInput.lng ||
       targetInput.mgrsZone ||
       targetInput.mgrsGrid ||
-      targetInput.mgrsCoord
+      targetInput.mgrsCoord,
   );
 
   return (
@@ -81,7 +81,6 @@ export default function MissionControl({ targetInput, onChange, onSubmit, onClea
           <button type="submit">Send Command</button>
           <button
             type="button"
-            className="secondary"
             onClick={onClear}
             disabled={!hasTargetValues}
           >

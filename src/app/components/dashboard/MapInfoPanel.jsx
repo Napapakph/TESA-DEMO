@@ -33,9 +33,7 @@ export default function MapInfoPanel({
           <>
             <p>Lat: {lastClicked.lat.toFixed(5)} • Lng: {lastClicked.lng.toFixed(5)}</p>
             <p>MGRS: {lastClickedMgrs}</p>
-            <button type="button" className="click-transfer" onClick={onFillTarget}>
-              เติมลงฟอร์มเป้าหมาย
-            </button>
+
           </>
         ) : (
           <p>กดบนแผนที่เพื่อรับพิกัดใหม่</p>

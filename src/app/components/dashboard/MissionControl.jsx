@@ -67,7 +67,7 @@ export default function MissionControl({ targetInput, onChange, onSubmit }) {
               placeholder="1234512345"
             />
           </label>
-          <p className="mgrs-preview">Combined MGRS: {mgrsPreview}</p>
+          <p className="mgrs-preview">Combined MGRS: {mgrsPreview} </p>
         </div>
         <button type="submit">Send Command</button>
       </form>

@@ -394,6 +394,34 @@ button:not(:disabled):hover {
   border-radius: 999px;
 }
 
+.route-target-icon {
+  pointer-events: none;
+}
+
+.route-target {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid #f97316;
+  background: rgba(249, 115, 22, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 8px rgba(249, 115, 22, 0.35);
+}
+
+.route-target-core {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f97316;
+}
+
+.route-path {
+  pointer-events: none;
+  stroke-linecap: round;
+}
+
 @media (max-width: 900px) {
   .dashboard {
     gap: 18px;

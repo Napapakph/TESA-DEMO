@@ -1,21 +1,43 @@
-// คอมโพเนนต์แสดงประวัติการแจ้งเตือนภัยคุกคาม
-export default function AlertLogPanel({ alertLog }) {
+export default function AlertLogPanel({ alertLog = [], formatDistance }) {
+  const fallbackDistance = (value) => {
+    if (value == null) return "-";
+    return `${value.toFixed(0)} m`;
+  };
+
   return (
     <div className="control-card">
-      <h2>บันทึกการแจ้งเตือน</h2>
+      <h2>Alert Log</h2>
       {alertLog.length === 0 ? (
-        <p className="empty">ยังไม่มีการแจ้งเตือน</p>
+        <p className="empty">No alerts yet</p>
       ) : (
         <ul className="alert-log">
           {alertLog.map((entry, index) => (
             <li key={`${entry.timestamp}-${index}`}>
               <div className="alert-header">
                 <strong>{entry.timestamp}</strong>
-                <span>พบ {entry.detected.length} ลำในรัศมี</span>
+                <span>Detected {entry.detected.length} targets</span>
               </div>
               <ul>
                 {entry.detected.map((intruder) => (
-                  <li key={intruder.id}>• {intruder.name}</li>
+                  <li key={intruder.id} className="alert-detail">
+                    <div className="alert-detail-title">{intruder.name}</div>
+                    <div className="alert-detail-meta">
+                      Coordinates Lat {intruder.position.lat.toFixed(4)} | Lng {intruder.position.lng.toFixed(4)}
+                    </div>
+                    <div className="alert-detail-meta">
+                      Distance to drone {
+                        formatDistance
+                          ? formatDistance(intruder.distanceToDrone)
+                          : fallbackDistance(intruder.distanceToDrone)
+                      }
+                      {' '}
+                      | Distance to base {
+                        formatDistance
+                          ? formatDistance(intruder.distanceToBase)
+                          : fallbackDistance(intruder.distanceToBase)
+                      }
+                    </div>
+                  </li>
                 ))}
               </ul>
             </li>

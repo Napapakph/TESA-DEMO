@@ -515,3 +515,21 @@ button:not(:disabled):hover {
   accent-color: var(--accent);
 }
 
+
+.alert-detail {
+  margin-bottom: 8px;
+}
+
+.alert-detail:last-child {
+  margin-bottom: 0;
+}
+
+.alert-detail-title {
+  font-weight: 600;
+}
+
+.alert-detail-meta {
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.75);
+}
+

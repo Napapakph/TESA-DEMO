@@ -479,7 +479,7 @@ export default function DefenseDashboard() {
     const lat = parseFloat(targetInput.lat);
     const lng = parseFloat(targetInput.lng);
     if (Number.isNaN(lat) || Number.isNaN(lng)) {
-      window.alert("กรุณากรอกพิกัดให้ถูกต้องก่อนส่งคำสั่ง");
+      window.alert("Please enter valid coordinates before sending the command.");
       return;
     }
     setDrone((prev) => ({
@@ -531,11 +531,21 @@ export default function DefenseDashboard() {
   const handleRaiseAlert = useCallback(async () => {
     const detected = intruders.filter((intruder) => intruder.isInside);
     if (detected.length === 0) {
-      window.alert("ยังไม่มีโดรนไม่ทราบฝ่ายอยู่ในรัศมี");
+      window.alert("No hostile drones detected within the radius.");
       return;
     }
+
     const timestamp = new Date().toLocaleTimeString();
-    const entry = { timestamp, detected };
+    const detailedDetected = detected.map((intruder) => ({
+      id: intruder.id,
+      name: intruder.name,
+      position: intruder.position,
+      distanceToDrone:
+        intruder.distance ?? haversineDistance(drone.position, intruder.position),
+      distanceToBase: haversineDistance(basePosition, intruder.position),
+    }));
+
+    const entry = { timestamp, detected: detailedDetected };
     setAlertLog((prev) => [entry, ...prev.slice(0, 4)]);
 
     try {
@@ -545,14 +555,14 @@ export default function DefenseDashboard() {
         body: JSON.stringify({ alert: entry }),
       });
     } catch (error) {
-      // หากบันทึกการแจ้งเตือนล้มเหลวให้ผู้ใช้ดำเนินต่อไปได้ตามปกติ
+      // Ignore failures when logging alerts to the mock API
     }
-  }, [intruders]);
+  }, [intruders, drone.position, basePosition]);
 
   // หยุดการเคลื่อนที่ของโดรนตามคำร้องขอ
   const handleStopRequest = useCallback(() => {
     if (!isNavigating && !animationRef.current) {
-      window.alert("โดรนไม่ได้อยู่ระหว่างการเดินทางอัตโนมัติ");
+      window.alert("Autonomous navigation is not active.");
       return;
     }
 
@@ -561,7 +571,7 @@ export default function DefenseDashboard() {
     );
 
     if (!confirmStop) {
-      window.alert("โดรนจะเดินหน้าต่อไปตามแผน");
+      window.alert("Continuing the current route.");
       return;
     }
 
@@ -635,7 +645,7 @@ export default function DefenseDashboard() {
           onAlert={handleRaiseAlert}
           formatDistance={formatDistance}
         />
-        <AlertLogPanel alertLog={alertLog} />
+        <AlertLogPanel alertLog={alertLog} formatDistance={formatDistance} />
       </section>
     </div>
   );

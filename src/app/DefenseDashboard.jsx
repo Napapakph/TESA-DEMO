@@ -119,6 +119,8 @@ export default function DefenseDashboard() {
   const gridLayerRef = useRef(null);
   const intruderLayerRef = useRef(null);
   const intruderMarkersRef = useRef(new Map());
+  const baseMarkerRef = useRef(null);
+  const basePositionRef = useRef(BASE_POSITION);
   const animationRef = useRef(null);
   const latestDroneRef = useRef(null);
 
@@ -129,6 +131,7 @@ export default function DefenseDashboard() {
     heading: 35,
     speed: 18,
   });
+  const [basePosition, setBasePosition] = useState(BASE_POSITION);
   const [detectionRadius, setDetectionRadius] = useState(600);
   const [targetInput, setTargetInput] = useState({ lat: "", lng: "" });
   const [targetPosition, setTargetPosition] = useState(null);
@@ -144,8 +147,8 @@ export default function DefenseDashboard() {
   const [isNavigating, setIsNavigating] = useState(false);
 
   const baseMgrs = useMemo(
-    () => mgrs.forward([BASE_POSITION.lng, BASE_POSITION.lat], 5),
-    [],
+    () => mgrs.forward([basePosition.lng, basePosition.lat], 5),
+    [basePosition],
   );
 
   // ดึงสถานะเริ่มต้นจาก API จำลอง
@@ -180,6 +183,14 @@ export default function DefenseDashboard() {
     latestDroneRef.current = drone;
   }, [drone]);
 
+  useEffect(() => {
+    basePositionRef.current = basePosition;
+  }, [basePosition]);
+  useEffect(() => {
+    if (!baseMarkerRef.current) return;
+    baseMarkerRef.current.setLatLng(basePosition);
+  }, [basePosition]);
+
   // ตั้งค่าพื้นฐานของแผนที่ Leaflet ครั้งแรก
   useEffect(() => {
     if (mapRef.current || !mapContainerRef.current) return;
@@ -196,6 +207,22 @@ export default function DefenseDashboard() {
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
     }).addTo(map);
+
+    const baseMarker = L.marker(basePositionRef.current, { draggable: true }).addTo(map);
+    baseMarkerRef.current = baseMarker;
+    baseMarker.bindTooltip("Main Base", { permanent: true, direction: "top", offset: [0, -12] });
+
+    const handleBaseDragEnd = (event) => {
+      const { lat, lng } = event.target.getLatLng();
+      const confirmed = window.confirm("Confirm moving the main base?");
+      if (!confirmed) {
+        baseMarker.setLatLng(basePositionRef.current);
+        return;
+      }
+      setBasePosition({ lat, lng });
+    };
+
+    baseMarker.on("dragend", handleBaseDragEnd);
 
     const droneIcon = L.divIcon({
       className: "drone-icon",
@@ -332,6 +359,8 @@ export default function DefenseDashboard() {
       map.off("moveend", updateGrid);
       map.off("zoomend", updateGrid);
       map.off("click", handleMapClick);
+      baseMarker.off("dragend", handleBaseDragEnd);
+      baseMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -434,8 +463,8 @@ export default function DefenseDashboard() {
   );
 
   const distanceFromBase = useMemo(
-    () => haversineDistance(BASE_POSITION, drone.position),
-    [drone.position],
+    () => haversineDistance(basePosition, drone.position),
+    [basePosition, drone.position],
   );
 
   // จัดการการเปลี่ยนค่าของฟอร์มเป้าหมายใหม่

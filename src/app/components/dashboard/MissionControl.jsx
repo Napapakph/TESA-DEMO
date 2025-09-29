@@ -1,11 +1,15 @@
-// คอมโพเนนต์ฟอร์มส่งคำสั่งจุดหมายใหม่ให้โดรน
 export default function MissionControl({ targetInput, onChange, onSubmit }) {
+  const mgrsPreview =
+    targetInput.mgrsZone && targetInput.mgrsGrid && targetInput.mgrsCoord
+      ? `${targetInput.mgrsZone}${targetInput.mgrsGrid}${targetInput.mgrsCoord}`
+      : "-";
+
   return (
     <div className="control-card">
-      <h2>ควบคุมภารกิจ</h2>
+      <h2>Mission Command</h2>
       <form className="command-form" onSubmit={onSubmit}>
         <label>
-          เป้าหมาย Latitude
+          Latitude
           <input
             type="number"
             step="0.00001"
@@ -15,7 +19,7 @@ export default function MissionControl({ targetInput, onChange, onSubmit }) {
           />
         </label>
         <label>
-          เป้าหมาย Longitude
+          Longitude
           <input
             type="number"
             step="0.00001"
@@ -24,7 +28,48 @@ export default function MissionControl({ targetInput, onChange, onSubmit }) {
             placeholder="101.21340"
           />
         </label>
-        <button type="submit">ส่งจุดใหม่ให้โดรน</button>
+        <div className="mgrs-section">
+          <h3>MGRS Command</h3>
+          <div className="mgrs-input-row">
+            <label>
+              Zone
+              <input
+                type="text"
+                maxLength={3}
+                value={targetInput.mgrsZone}
+                onChange={(event) =>
+                  onChange("mgrsZone", event.target.value.toUpperCase().replace(/[^0-9A-Z]/g, ""))
+                }
+                placeholder="48Q"
+              />
+            </label>
+            <label>
+              Grid
+              <input
+                type="text"
+                maxLength={2}
+                value={targetInput.mgrsGrid}
+                onChange={(event) =>
+                  onChange("mgrsGrid", event.target.value.toUpperCase().replace(/[^A-Z]/g, ""))
+                }
+                placeholder="WD"
+              />
+            </label>
+          </div>
+          <label>
+            Coordinate
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="\d*"
+              value={targetInput.mgrsCoord}
+              onChange={(event) => onChange("mgrsCoord", event.target.value.replace(/[^0-9]/g, ""))}
+              placeholder="1234512345"
+            />
+          </label>
+          <p className="mgrs-preview">Combined MGRS: {mgrsPreview}</p>
+        </div>
+        <button type="submit">Send Command</button>
       </form>
     </div>
   );

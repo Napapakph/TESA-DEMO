@@ -133,7 +133,13 @@ export default function DefenseDashboard() {
   });
   const [basePosition, setBasePosition] = useState(BASE_POSITION);
   const [detectionRadius, setDetectionRadius] = useState(600);
-  const [targetInput, setTargetInput] = useState({ lat: "", lng: "" });
+  const [targetInput, setTargetInput] = useState({
+    lat: "",
+    lng: "",
+    mgrsZone: "",
+    mgrsGrid: "",
+    mgrsCoord: "",
+  });
   const [targetPosition, setTargetPosition] = useState(null);
   const [lastClicked, setLastClicked] = useState(null);
   const [intruders, setIntruders] = useState(() =>
@@ -476,26 +482,91 @@ export default function DefenseDashboard() {
   // ส่งคำสั่งให้โดรนไปยังพิกัดใหม่
   const handleCommand = useCallback(async (event) => {
     event.preventDefault();
-    const lat = parseFloat(targetInput.lat);
-    const lng = parseFloat(targetInput.lng);
-    if (Number.isNaN(lat) || Number.isNaN(lng)) {
+
+    let lat = Number.parseFloat(targetInput.lat);
+    let lng = Number.parseFloat(targetInput.lng);
+
+    const zonePart = targetInput.mgrsZone.trim().toUpperCase();
+    const gridPart = targetInput.mgrsGrid.trim().toUpperCase();
+    const coordPart = targetInput.mgrsCoord.trim().replace(/\s+/g, "");
+
+    const hasMgrsInput = zonePart !== "" || gridPart !== "" || coordPart !== "";
+
+    if (hasMgrsInput) {
+      if (!zonePart || !gridPart || !coordPart) {
+        window.alert("Please complete all MGRS fields (zone, grid, coordinate) before sending the command.");
+        return;
+      }
+
+      if (!/^\d{1,2}[C-HJ-NP-X]$/.test(zonePart)) {
+        window.alert("The MGRS zone should be 1-2 digits followed by a zone letter (e.g., 48Q).");
+        return;
+      }
+
+      if (!/^[A-Z]{2}$/.test(gridPart)) {
+        window.alert("The MGRS 100km grid should be two letters (e.g., WD).");
+        return;
+      }
+
+      if (!/^\d{2,10}$/.test(coordPart) || coordPart.length % 2 !== 0) {
+        window.alert("The MGRS coordinate should be an even number of digits (2 to 10).");
+        return;
+      }
+
+      const mgrsString = `${zonePart}${gridPart}${coordPart}`;
+
+      try {
+        const [convertedLng, convertedLat] = mgrs.toPoint(mgrsString);
+        if (!Number.isFinite(convertedLat) || !Number.isFinite(convertedLng)) {
+          throw new Error("Invalid MGRS conversion");
+        }
+        lat = convertedLat;
+        lng = convertedLng;
+      } catch (error) {
+        window.alert("Unable to convert the MGRS value to coordinates. Please double-check the input.");
+        return;
+      }
+    }
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       window.alert("Please enter valid coordinates before sending the command.");
       return;
     }
+
+    const nextLatLng = { lat, lng };
+
     setDrone((prev) => ({
       ...prev,
-      heading: bearingBetween(prev.position, { lat, lng }),
+      heading: bearingBetween(prev.position, nextLatLng),
     }));
-    setTargetPosition({ lat, lng });
+    setTargetPosition(nextLatLng);
 
     try {
       await fetch("/api/drone", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target: { lat, lng } }),
+        body: JSON.stringify({ target: nextLatLng }),
       });
     } catch (error) {
       // หากบันทึกไป backend ล้มเหลว ให้เงียบไว้เพื่อไม่ให้รบกวนการใช้งาน
+    }
+
+    try {
+      const updatedMgrs = mgrs.forward([lng, lat], 5);
+      setTargetInput((prev) => ({
+        ...prev,
+        lat: lat.toFixed(5),
+        lng: lng.toFixed(5),
+        mgrsZone: updatedMgrs.slice(0, 3),
+        mgrsGrid: updatedMgrs.slice(3, 5),
+        mgrsCoord: updatedMgrs.slice(5),
+      }));
+    } catch (error) {
+      setTargetInput((prev) => ({
+        ...prev,
+        lat: lat.toFixed(5),
+        lng: lng.toFixed(5),
+      }));
     }
   }, [targetInput]);
 
@@ -604,9 +675,26 @@ export default function DefenseDashboard() {
           lastClickedMgrs={lastClickedMgrs}
           onFillTarget={() => {
             if (!lastClicked) return;
-            setTargetInput({
-              lat: lastClicked.lat.toFixed(5),
-              lng: lastClicked.lng.toFixed(5),
+            setTargetInput((prev) => {
+              const latValue = lastClicked.lat.toFixed(5);
+              const lngValue = lastClicked.lng.toFixed(5);
+              try {
+                const mgrsValue = mgrs.forward([lastClicked.lng, lastClicked.lat], 5);
+                return {
+                  ...prev,
+                  lat: latValue,
+                  lng: lngValue,
+                  mgrsZone: mgrsValue.slice(0, 3),
+                  mgrsGrid: mgrsValue.slice(3, 5),
+                  mgrsCoord: mgrsValue.slice(5),
+                };
+              } catch (error) {
+                return {
+                  ...prev,
+                  lat: latValue,
+                  lng: lngValue,
+                };
+              }
             });
           }}
         />

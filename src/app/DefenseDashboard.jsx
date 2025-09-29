@@ -8,6 +8,7 @@ import mgrs from "mgrs";
 import ActionToolbar from "@/app/components/dashboard/ActionToolbar";
 import DashboardHeader from "@/app/components/dashboard/DashboardHeader";
 import MapInfoPanel from "@/app/components/dashboard/MapInfoPanel";
+import RouteLayerManager from "@/app/components/dashboard/RouteLayerManager";
 import MissionControl from "@/app/components/dashboard/MissionControl";
 import FlightControlPanel from "@/app/components/dashboard/FlightControlPanel";
 import ThreatPanel from "@/app/components/dashboard/ThreatPanel";
@@ -117,15 +118,13 @@ export default function DefenseDashboard() {
   const droneMarkerRef = useRef(null);
   const detectionCircleRef = useRef(null);
   const gridLayerRef = useRef(null);
-  const routeLayerRef = useRef(null);
-  const routeLineRef = useRef(null);
-  const targetMarkerRef = useRef(null);
   const intruderLayerRef = useRef(null);
   const intruderMarkersRef = useRef(new Map());
   const baseMarkerRef = useRef(null);
   const basePositionRef = useRef(BASE_POSITION);
   const animationRef = useRef(null);
   const latestDroneRef = useRef(null);
+  const routeManagerRef = useRef(null);
 
   // สถานะหลักของโดรนและระบบ
   const [drone, setDrone] = useState({
@@ -155,6 +154,7 @@ export default function DefenseDashboard() {
   const [alertLog, setAlertLog] = useState([]);
   const [isNavigating, setIsNavigating] = useState(false);
   const [scanMode, setScanMode] = useState("manual");
+  const [isMapReady, setIsMapReady] = useState(false);
 
   const baseMgrs = useMemo(
     () => mgrs.forward([basePosition.lng, basePosition.lat], 5),
@@ -254,7 +254,6 @@ export default function DefenseDashboard() {
     detectionCircleRef.current = circle;
 
     gridLayerRef.current = L.layerGroup().addTo(map);
-    routeLayerRef.current = L.layerGroup().addTo(map);
     intruderLayerRef.current = L.layerGroup().addTo(map);
 
     intruderSeeds.forEach((intruder) => {
@@ -365,6 +364,7 @@ export default function DefenseDashboard() {
     updateGrid();
 
     mapRef.current = map;
+    setIsMapReady(true);
 
     return () => {
       map.off("moveend", updateGrid);
@@ -372,12 +372,7 @@ export default function DefenseDashboard() {
       map.off("click", handleMapClick);
       baseMarker.off("dragend", handleBaseDragEnd);
       baseMarkerRef.current = null;
-      if (routeLayerRef.current) {
-        routeLayerRef.current.clearLayers();
-        routeLayerRef.current = null;
-      }
-      routeLineRef.current = null;
-      targetMarkerRef.current = null;
+      setIsMapReady(false);
       map.remove();
       mapRef.current = null;
     };
@@ -421,55 +416,6 @@ export default function DefenseDashboard() {
   }, [intruders]);
 
   // จัดการ animation การเคลื่อนที่แบบจำลองของโดรน
-  const clearRouteVisualization = useCallback(() => {
-    if (routeLayerRef.current && routeLineRef.current) {
-      routeLayerRef.current.removeLayer(routeLineRef.current);
-      routeLineRef.current = null;
-    }
-    if (routeLayerRef.current && targetMarkerRef.current) {
-      routeLayerRef.current.removeLayer(targetMarkerRef.current);
-      targetMarkerRef.current = null;
-    }
-  }, []);
-
-  const drawRouteVisualization = useCallback((start, target) => {
-    if (!routeLayerRef.current) return;
-
-    clearRouteVisualization();
-
-    const line = L.polyline(
-      [
-        [start.lat, start.lng],
-        [target.lat, target.lng],
-      ],
-      {
-        color: "#38bdf8",
-        weight: 2,
-        dashArray: "6 8",
-        className: "route-path",
-        interactive: false,
-      },
-    );
-
-    routeLineRef.current = line;
-    routeLayerRef.current.addLayer(line);
-
-    const targetIcon = L.divIcon({
-      className: "route-target-icon",
-      html: '<div class="route-target"><div class="route-target-core"></div></div>',
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
-    });
-
-    const marker = L.marker([target.lat, target.lng], {
-      icon: targetIcon,
-      interactive: false,
-    });
-
-    targetMarkerRef.current = marker;
-    routeLayerRef.current.addLayer(marker);
-  }, [clearRouteVisualization]);
-
   useEffect(() => {
     if (!mapRef.current || !targetPosition) return;
 
@@ -502,7 +448,7 @@ export default function DefenseDashboard() {
       if (progress < 1) {
         animationRef.current = requestAnimationFrame(animate);
       } else {
-        clearRouteVisualization();
+        routeManagerRef.current?.clearRoute();
         setTargetPosition(null);
         setIsNavigating(false);
         animationRef.current = null;
@@ -517,7 +463,7 @@ export default function DefenseDashboard() {
         animationRef.current = null;
       }
     };
-  }, [targetPosition, drone.speed, clearRouteVisualization]);
+  }, [targetPosition, drone.speed, routeManagerRef]);
 
   const droneMgrs = useMemo(
     () => mgrs.forward([drone.position.lng, drone.position.lat], 5),
@@ -596,7 +542,7 @@ export default function DefenseDashboard() {
     const nextLatLng = { lat, lng };
 
     const startForRoute = latestDroneRef.current?.position ?? BASE_POSITION;
-    drawRouteVisualization(startForRoute, nextLatLng);
+    routeManagerRef.current?.drawRoute(startForRoute, nextLatLng);
 
     setDrone((prev) => ({
       ...prev,
@@ -631,19 +577,9 @@ export default function DefenseDashboard() {
         lng: lng.toFixed(5),
       }));
     }
-  }, [targetInput, drawRouteVisualization]);
+  }, [targetInput, routeManagerRef]);
 
   // คำนวณการสแกนภัยคุกคามรอบพื้นที่
-  useEffect(() => {
-    if (!routeLineRef.current || !targetMarkerRef.current) return;
-
-    const targetLatLng = targetMarkerRef.current.getLatLng();
-    routeLineRef.current.setLatLngs([
-      [drone.position.lat, drone.position.lng],
-      [targetLatLng.lat, targetLatLng.lng],
-    ]);
-  }, [drone.position]);
-
   const handleScanIntruders = useCallback(() => {
     setIntruders((prev) =>
       prev.map((intruder) => {
@@ -724,10 +660,10 @@ export default function DefenseDashboard() {
       animationRef.current = null;
     }
 
-    clearRouteVisualization();
+    routeManagerRef.current?.clearRoute();
     setTargetPosition(null);
     setIsNavigating(false);
-  }, [isNavigating, clearRouteVisualization]);
+  }, [isNavigating, routeManagerRef]);
 
   // โฟกัสแผนที่กลับมาที่โดรนทันที
   const handleFocusOnDrone = useCallback(() => {
@@ -772,6 +708,12 @@ export default function DefenseDashboard() {
               }
             });
           }}
+        />
+        <RouteLayerManager
+          ref={routeManagerRef}
+          mapRef={mapRef}
+          isMapReady={isMapReady}
+          dronePosition={drone.position}
         />
           <ActionToolbar
             onFocus={handleFocusOnDrone}

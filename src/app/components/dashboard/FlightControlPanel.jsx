@@ -38,7 +38,7 @@ export default function FlightControlPanel({
           <input
             type="range"
             min="5"
-            max="80"
+            max="200"
             value={drone.speed}
             onChange={(event) => onSpeedChange(event.target.value)}
           />

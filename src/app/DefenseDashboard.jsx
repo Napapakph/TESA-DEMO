@@ -595,12 +595,6 @@ export default function DefenseDashboard() {
     <div className="dashboard">
       <section className="map-section">
         <DashboardHeader baseMgrs={baseMgrs} />
-        <ActionToolbar
-          onFocus={handleFocusOnDrone}
-          onStop={handleStopRequest}
-          isNavigating={isNavigating}
-        />
-        <div ref={mapContainerRef} className="map-container" />
         <MapInfoPanel
           drone={drone}
           droneMgrs={droneMgrs}
@@ -616,6 +610,12 @@ export default function DefenseDashboard() {
             });
           }}
         />
+          <ActionToolbar
+            onFocus={handleFocusOnDrone}
+            onStop={handleStopRequest}
+            isNavigating={isNavigating}
+          />
+        <div ref={mapContainerRef} className="map-container" />
       </section>
       <section className="control-section">
         <MissionControl

@@ -17,12 +17,19 @@ export default function AlertLogPanel({ alertLog = [], formatDistance }) {
                 <strong>{entry.timestamp}</strong>
                 <span>Detected {entry.detected.length} targets</span>
               </div>
+              {entry.drone ? (
+                <div className="alert-detail-meta">
+                  Drone Lat {entry.drone.position.lat.toFixed(4)} | Lng {entry.drone.position.lng.toFixed(4)}
+                  {entry.drone.mgrs ? ` | MGRS ${entry.drone.mgrs}` : ''}
+                </div>
+              ) : null}
               <ul>
                 {entry.detected.map((intruder) => (
                   <li key={intruder.id} className="alert-detail">
                     <div className="alert-detail-title">{intruder.name}</div>
                     <div className="alert-detail-meta">
                       Coordinates Lat {intruder.position.lat.toFixed(4)} | Lng {intruder.position.lng.toFixed(4)}
+                      {intruder.mgrs ? ` | MGRS ${intruder.mgrs}` : ''}
                     </div>
                     <div className="alert-detail-meta">
                       Distance to drone {

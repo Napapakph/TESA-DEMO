@@ -201,6 +201,47 @@ export default function DefenseDashboard() {
     baseMarkerRef.current.setLatLng(basePosition);
   }, [basePosition]);
 
+  const deriveMgrsFields = useCallback((lat, lng) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return { zone: "", grid: "", coord: "" };
+    }
+
+    try {
+      const value = mgrs.forward([lng, lat], 5);
+      return {
+        zone: value.slice(0, 3),
+        grid: value.slice(3, 5),
+        coord: value.slice(5),
+      };
+    } catch (error) {
+      return { zone: "", grid: "", coord: "" };
+    }
+  }, []);
+
+  const setTargetFromLatLng = useCallback((latValue, lngValue) => {
+    setTargetInput((prev) => {
+      const latNumber = Number(latValue);
+      const lngNumber = Number(lngValue);
+      const isLatValid = Number.isFinite(latNumber);
+      const isLngValid = Number.isFinite(lngNumber);
+
+      const latString = isLatValid ? latNumber.toFixed(5) : "";
+      const lngString = isLngValid ? lngNumber.toFixed(5) : "";
+      const mgrsFields = isLatValid && isLngValid
+        ? deriveMgrsFields(latNumber, lngNumber)
+        : { zone: "", grid: "", coord: "" };
+
+      return {
+        ...prev,
+        lat: latString,
+        lng: lngString,
+        mgrsZone: mgrsFields.zone,
+        mgrsGrid: mgrsFields.grid,
+        mgrsCoord: mgrsFields.coord,
+      };
+    });
+  }, [deriveMgrsFields]);
+
   // ตั้งค่าพื้นฐานของแผนที่ Leaflet ครั้งแรก
   useEffect(() => {
     if (mapRef.current || !mapContainerRef.current) return;
@@ -274,6 +315,7 @@ export default function DefenseDashboard() {
     const handleMapClick = (event) => {
       const clickedPosition = { lat: event.latlng.lat, lng: event.latlng.lng };
       setLastClicked(clickedPosition);
+      setTargetFromLatLng(clickedPosition.lat, clickedPosition.lng);
     };
 
     compassControl.onAdd = function onAdd() {
@@ -376,7 +418,7 @@ export default function DefenseDashboard() {
       map.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [setTargetFromLatLng]);
 
   // ซิงก์ตำแหน่งและหัวโดรนกับ marker ในแผนที่
   useEffect(() => {
@@ -482,8 +524,24 @@ export default function DefenseDashboard() {
 
   // จัดการการเปลี่ยนค่าของฟอร์มเป้าหมายใหม่
   const handleTargetChange = useCallback((field, value) => {
+    if (field === "lat" || field === "lng") {
+      setTargetInput((prev) => {
+        const next = { ...prev, [field]: value };
+        const latNumber = Number.parseFloat(next.lat);
+        const lngNumber = Number.parseFloat(next.lng);
+        const { zone, grid, coord } = deriveMgrsFields(latNumber, lngNumber);
+        return {
+          ...next,
+          mgrsZone: zone,
+          mgrsGrid: grid,
+          mgrsCoord: coord,
+        };
+      });
+      return;
+    }
+
     setTargetInput((prev) => ({ ...prev, [field]: value }));
-  }, []);
+  }, [deriveMgrsFields]);
 
   // ส่งคำสั่งให้โดรนไปยังพิกัดใหม่
   const handleCommand = useCallback(async (event) => {
@@ -560,24 +618,20 @@ export default function DefenseDashboard() {
       // หากบันทึกไป backend ล้มเหลว ให้เงียบไว้เพื่อไม่ให้รบกวนการใช้งาน
     }
 
-    try {
-      const updatedMgrs = mgrs.forward([lng, lat], 5);
-      setTargetInput((prev) => ({
-        ...prev,
-        lat: lat.toFixed(5),
-        lng: lng.toFixed(5),
-        mgrsZone: updatedMgrs.slice(0, 3),
-        mgrsGrid: updatedMgrs.slice(3, 5),
-        mgrsCoord: updatedMgrs.slice(5),
-      }));
-    } catch (error) {
-      setTargetInput((prev) => ({
-        ...prev,
-        lat: lat.toFixed(5),
-        lng: lng.toFixed(5),
-      }));
-    }
-  }, [targetInput, routeManagerRef]);
+    setTargetFromLatLng(lat, lng);
+  }, [targetInput, routeManagerRef, setTargetFromLatLng]);
+
+  const handleClearTarget = useCallback(() => {
+    setTargetInput({
+      lat: "",
+      lng: "",
+      mgrsZone: "",
+      mgrsGrid: "",
+      mgrsCoord: "",
+    });
+    setTargetPosition(null);
+    routeManagerRef.current?.clearRoute();
+  }, []);
 
   // คำนวณการสแกนภัยคุกคามรอบพื้นที่
   const handleScanIntruders = useCallback(() => {
@@ -616,16 +670,41 @@ export default function DefenseDashboard() {
     }
 
     const timestamp = new Date().toLocaleTimeString();
-    const detailedDetected = detected.map((intruder) => ({
-      id: intruder.id,
-      name: intruder.name,
-      position: intruder.position,
-      distanceToDrone:
-        intruder.distance ?? haversineDistance(drone.position, intruder.position),
-      distanceToBase: haversineDistance(basePosition, intruder.position),
-    }));
+    const detailedDetected = detected.map((intruder) => {
+      let intruderMgrs = null;
+      try {
+        intruderMgrs = mgrs.forward([intruder.position.lng, intruder.position.lat], 5);
+      } catch (error) {
+        intruderMgrs = null;
+      }
 
-    const entry = { timestamp, detected: detailedDetected };
+      return {
+        id: intruder.id,
+        name: intruder.name,
+        position: intruder.position,
+        mgrs: intruderMgrs,
+        distanceToDrone:
+          intruder.distance ?? haversineDistance(drone.position, intruder.position),
+        distanceToBase: haversineDistance(basePosition, intruder.position),
+      };
+    });
+
+    const droneMgrsSnapshot = (() => {
+      try {
+        return mgrs.forward([drone.position.lng, drone.position.lat], 5);
+      } catch (error) {
+        return null;
+      }
+    })();
+
+    const entry = {
+      timestamp,
+      drone: {
+        position: drone.position,
+        mgrs: droneMgrsSnapshot,
+      },
+      detected: detailedDetected,
+    };
     setAlertLog((prev) => [entry, ...prev.slice(0, 4)]);
 
     try {
@@ -686,27 +765,7 @@ export default function DefenseDashboard() {
           lastClickedMgrs={lastClickedMgrs}
           onFillTarget={() => {
             if (!lastClicked) return;
-            setTargetInput((prev) => {
-              const latValue = lastClicked.lat.toFixed(5);
-              const lngValue = lastClicked.lng.toFixed(5);
-              try {
-                const mgrsValue = mgrs.forward([lastClicked.lng, lastClicked.lat], 5);
-                return {
-                  ...prev,
-                  lat: latValue,
-                  lng: lngValue,
-                  mgrsZone: mgrsValue.slice(0, 3),
-                  mgrsGrid: mgrsValue.slice(3, 5),
-                  mgrsCoord: mgrsValue.slice(5),
-                };
-              } catch (error) {
-                return {
-                  ...prev,
-                  lat: latValue,
-                  lng: lngValue,
-                };
-              }
-            });
+            setTargetFromLatLng(lastClicked.lat, lastClicked.lng);
           }}
         />
         <RouteLayerManager
@@ -727,6 +786,7 @@ export default function DefenseDashboard() {
           targetInput={targetInput}
           onChange={handleTargetChange}
           onSubmit={handleCommand}
+          onClear={handleClearTarget}
         />
         <FlightControlPanel
           drone={drone}

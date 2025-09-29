@@ -25,7 +25,7 @@ export default function FlightControlPanel({
         <label>
           ทิศทางกล้อง
           <input
-            type="range"
+            type="range" 
             min="0"
             max="359"
             value={drone.heading}
@@ -38,7 +38,7 @@ export default function FlightControlPanel({
           <input
             type="range"
             min="5"
-            max="200"
+            max="1000"
             value={drone.speed}
             onChange={(event) => onSpeedChange(event.target.value)}
           />

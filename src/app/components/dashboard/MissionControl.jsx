@@ -1,8 +1,16 @@
-export default function MissionControl({ targetInput, onChange, onSubmit }) {
+export default function MissionControl({ targetInput, onChange, onSubmit, onClear }) {
   const mgrsPreview =
     targetInput.mgrsZone && targetInput.mgrsGrid && targetInput.mgrsCoord
       ? `${targetInput.mgrsZone}${targetInput.mgrsGrid}${targetInput.mgrsCoord}`
       : "-";
+
+  const hasTargetValues = Boolean(
+    targetInput.lat ||
+      targetInput.lng ||
+      targetInput.mgrsZone ||
+      targetInput.mgrsGrid ||
+      targetInput.mgrsCoord
+  );
 
   return (
     <div className="control-card">
@@ -69,7 +77,17 @@ export default function MissionControl({ targetInput, onChange, onSubmit }) {
           </label>
           <p className="mgrs-preview">Combined MGRS: {mgrsPreview} </p>
         </div>
-        <button type="submit">Send Command</button>
+        <div className="form-actions">
+          <button type="submit">Send Command</button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={onClear}
+            disabled={!hasTargetValues}
+          >
+            Clear Target
+          </button>
+        </div>
       </form>
     </div>
   );

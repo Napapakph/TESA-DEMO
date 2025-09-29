@@ -171,8 +171,15 @@ body {
   color: var(--foreground);
 }
 
-.command-form button {
+.command-form .form-actions {
   grid-column: span 2;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.command-form .form-actions button {
+  flex: 1 0 auto;
 }
 
 button {
@@ -189,6 +196,15 @@ button {
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+button.secondary {
+  background: rgba(148, 163, 184, 0.22);
+  color: rgba(226, 232, 240, 0.9);
+}
+
+button.secondary:not(:disabled):hover {
+  background: rgba(148, 163, 184, 0.35);
 }
 
 button:not(:disabled):hover {
@@ -507,8 +523,13 @@ button:not(:disabled):hover {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .command-form button {
-    grid-column: auto;
+  .command-form .form-actions {
+    grid-column: span 1;
+    flex-direction: column;
+  }
+
+  .command-form .form-actions button {
+    width: 100%;
   }
 }
 .scan-mode-control {

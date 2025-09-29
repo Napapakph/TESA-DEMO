@@ -145,6 +145,7 @@ export default function DefenseDashboard() {
   );
   const [alertLog, setAlertLog] = useState([]);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [scanMode, setScanMode] = useState("manual");
 
   const baseMgrs = useMemo(
     () => mgrs.forward([basePosition.lng, basePosition.lat], 5),
@@ -512,6 +513,20 @@ export default function DefenseDashboard() {
     );
   }, [drone.position, detectionRadius]);
 
+  useEffect(() => {
+    if (scanMode !== "auto") return;
+
+    const intervalId = setInterval(() => {
+      handleScanIntruders();
+    }, 1000);
+
+    handleScanIntruders();
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [scanMode, handleScanIntruders]);
+
   // เก็บบันทึกการแจ้งเตือนโดรนไม่ทราบฝ่ายที่เข้ามาใกล้
   const handleRaiseAlert = useCallback(async () => {
     const detected = intruders.filter((intruder) => intruder.isInside);
@@ -614,6 +629,8 @@ export default function DefenseDashboard() {
         />
         <ThreatPanel
           intruders={intruders}
+          scanMode={scanMode}
+          onScanModeChange={setScanMode}
           onScan={handleScanIntruders}
           onAlert={handleRaiseAlert}
           formatDistance={formatDistance}

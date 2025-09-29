@@ -483,3 +483,35 @@ button:not(:disabled):hover {
     grid-column: auto;
   }
 }
+.scan-mode-control {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.scan-mode-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.scan-mode-options {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.scan-mode-options label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: rgba(226, 232, 240, 0.75);
+}
+
+.scan-mode-options input[type="radio"] {
+  accent-color: var(--accent);
+}
+

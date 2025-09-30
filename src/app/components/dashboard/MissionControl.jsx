@@ -81,7 +81,8 @@ export default function MissionControl({ targetInput, onChange, onSubmit, onClea
           <button type="submit">Send Command</button>
           <button
             type="button"
-            onClick={onClear}
+            className="secondary"
+            onClick={() => onClear?.()}
             disabled={!hasTargetValues}
           >
             Clear Target

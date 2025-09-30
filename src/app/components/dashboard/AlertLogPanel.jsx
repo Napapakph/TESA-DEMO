@@ -19,7 +19,7 @@ export default function AlertLogPanel({ alertLog = [], formatDistance }) {
               </div>
               {entry.drone ? (
                 <div className="alert-detail-meta">
-                  Drone Lat {entry.drone.position.lat.toFixed(4)} | Lng {entry.drone.position.lng.toFixed(4)}
+                  {(entry.drone.label ?? 'Drone')} Lat {entry.drone.position.lat.toFixed(4)} | Lng {entry.drone.position.lng.toFixed(4)}
                   {entry.drone.mgrs ? ` | MGRS ${entry.drone.mgrs}` : ''}
                 </div>
               ) : null}

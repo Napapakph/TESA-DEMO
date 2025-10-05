@@ -3,14 +3,46 @@ export default function ThreatPanel({
   scanMode = "manual",
   onScanModeChange,
   onScan,
+  isBaseScanActive,
+  onToggleBaseScan,
   onAlert,
   formatDistance,
+  scanTelemetry = { auto: { isRealtime: false, lastDetectedAt: null }, manual: { lastDetectedAt: null } },
 }) {
   const hasIntruderInside = intruders.some((intruder) => intruder.isInside);
+  const autoTelemetry = scanTelemetry?.auto ?? { isRealtime: false, lastDetectedAt: null };
+  const manualTelemetry = scanTelemetry?.manual ?? { lastDetectedAt: null };
+
+  const autoStatusText = autoTelemetry.isRealtime
+    ? `Auto: Realtime${autoTelemetry.lastDetectedAt ? ` (${autoTelemetry.lastDetectedAt})` : ""}`
+    : "Auto: Standby";
+
+  const manualStatusText = manualTelemetry.lastDetectedAt
+    ? `Manual: ล่าสุด ${manualTelemetry.lastDetectedAt}`
+    : "Manual: ยังไม่พบการตรวจจับ";
+
+  const describeDetectionSources = (sources = []) => {
+    if (!sources.length) {
+      return "ยังไม่พบจากการสแกน";
+    }
+
+    const labelMap = {
+      base: "ฐานทัพ",
+      drone: "โดรนฝั่งเรา",
+    };
+
+    const labels = sources.map((source) => labelMap[source] ?? source);
+    return `พบโดย: ${labels.join(", ")}`;
+  };
 
   return (
     <div className="control-card">
       <h2>Threat Detection</h2>
+
+      <div className="scan-mode-status">
+        <span className="status-item">{autoStatusText}</span>
+        <span className="status-item">{manualStatusText}</span>
+      </div>
 
       <div className="scan-mode-control">
         <span className="scan-mode-label">Scan Mode</span>
@@ -52,6 +84,19 @@ export default function ThreatPanel({
         </button>
       </div>
 
+      <div className="base-scan-control">
+        <button
+          type="button"
+          className={`base-scan-toggle${isBaseScanActive ? " alert-button" : ""}`}
+          onClick={onToggleBaseScan}
+        >
+          {isBaseScanActive ? "Disable Base Scan" : "Enable Base Scan"}
+        </button>
+        <span className="base-scan-status">
+          {isBaseScanActive ? "Base scan active" : "Base scan inactive"}
+        </span>
+      </div>
+
       <ul className="intruder-list">
         {intruders.map((intruder) => (
           <li
@@ -65,6 +110,7 @@ export default function ThreatPanel({
             <div className="intruder-meta">
               {intruder.distance != null ? formatDistance(intruder.distance) : "Awaiting scan"}
             </div>
+            <div className="intruder-meta">{describeDetectionSources(intruder.detectedBy)}</div>
           </li>
         ))}
       </ul>

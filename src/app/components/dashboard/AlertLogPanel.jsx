@@ -4,6 +4,25 @@ export default function AlertLogPanel({ alertLog = [], formatDistance }) {
     return `${value.toFixed(0)} m`;
   };
 
+  const sourceLabelMap = {
+    base: "พบโดยฐานทัพ",
+    drone: "พบโดยโดรนฝั่งเรา",
+  };
+
+  const describeDetectionSources = (sources = []) => {
+    if (!sources.length) {
+      return "ยังไม่พบจากการสแกน";
+    }
+
+    const labelMap = {
+      base: "ฐานทัพ",
+      drone: "โดรนฝั่งเรา",
+    };
+
+    const labels = sources.map((source) => labelMap[source] ?? source);
+    return `พบโดย: ${labels.join(", ")}`;
+  };
+
   return (
     <div className="control-card">
       <h2>Alert Log</h2>
@@ -16,6 +35,9 @@ export default function AlertLogPanel({ alertLog = [], formatDistance }) {
               <div className="alert-header">
                 <strong>{entry.timestamp}</strong>
                 <span>Detected {entry.detected.length} targets</span>
+                {entry.source ? (
+                  <span className="alert-source">{sourceLabelMap[entry.source] ?? entry.source}</span>
+                ) : null}
               </div>
               {entry.drone ? (
                 <div className="alert-detail-meta">
@@ -43,6 +65,9 @@ export default function AlertLogPanel({ alertLog = [], formatDistance }) {
                           ? formatDistance(intruder.distanceToBase)
                           : fallbackDistance(intruder.distanceToBase)
                       }
+                    </div>
+                    <div className="alert-detail-meta">
+                      {describeDetectionSources(intruder.detectedBy)}
                     </div>
                   </li>
                 ))}

@@ -245,6 +245,22 @@ button:not(:disabled):hover {
   flex-wrap: wrap;
 }
 
+.base-scan-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.base-scan-status {
+  font-size: 0.82rem;
+  color: rgba(226, 232, 240, 0.7);
+}
+
+.base-scan-toggle.alert-button {
+  color: #fff;
+}
+
 .intruder-list {
   list-style: none;
   margin: 0;

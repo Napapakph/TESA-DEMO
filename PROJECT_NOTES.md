@@ -29,6 +29,7 @@ npm run dev
 - `src/app/components/dashboard/FlightControlPanel.jsx` : สไลเดอร์ควบคุมความสูง ทิศ ความเร็ว และรัศมี
 - `src/app/components/dashboard/ThreatPanel.jsx` : บริหารรายการโดรนไม่ทราบฝ่าย ปุ่มสแกนและแจ้งเตือน
 - `src/app/components/dashboard/AlertLogPanel.jsx` : บันทึกประวัติเตือนภัย
+- `src/app/data/mockIntruders.js` : mock data สำหรับโดรนไม่ทราบฝ่าย พร้อมฟังก์ชันสุ่มตำแหน่ง
 - `src/server/mockDatabase.js` : จำลองฐานข้อมูลกลางสำหรับ backend
 - `src/app/api/drone/route.js` : เส้นทาง API ตัวอย่างให้ frontend และ backend ทำงานร่วมกัน
 
@@ -66,3 +67,17 @@ npm run dev
 - **FlightControlPanel.jsx**: สไลเดอร์ควบคุมความสูง ทิศ ความเร็ว และรัศมี
 - **ThreatPanel.jsx**: บริหารรายการโดรนไม่ทราบฝ่าย ปุ่มสแกนและแจ้งเตือน
 - **AlertLogPanel.jsx**: บันทึกประวัติเตือนภัย
+
+## ฟีเจอร์อัปเดตด้านการตรวจจับ
+
+- เพิ่มฟังก์ชัน `buildDetectionSources` และ `detectionSummaryHasHit` ใน `DefenseDashboard.jsx` เพื่อรวบรวมข้อมูลแหล่งที่มาตอนสแกนและบอกว่าการสแกนครั้งล่าสุดพบเป้าหมายหรือไม่อย่างชัดเจน
+- `DefenseDashboard` เก็บสถานะสแกนล่าสุด (`scanTelemetry`) ใช้แจ้งให้ `ThreatPanel` ทราบว่า Auto Scan อยู่ในโหมด Realtime หรือไม่ และ Manual Scan พบเป้าหมายครั้งสุดท้ายเมื่อใด
+- หน้าต่าง Threat Detection แสดงสเตตัส Auto = Realtime เมื่อพบโดรนในโหมดอัตโนมัติ และในโหมด Manual จะบันทึกเวลาในการพบเป้าหมายครั้งล่าสุด พร้อมทั้งบอกว่าโดรนไม่ทราบฝ่ายถูกพบโดยฐานทัพหรือโดรนฝั่งเรา (หรือทั้งคู่)
+- Alert Log แสดงแหล่งที่มาของการแจ้งเตือนอย่างชัดเจนว่า "พบโดยฐานทัพ" หรือ "พบโดยโดรนฝั่งเรา" และในแต่ละรายการย่อยจะระบุแหล่งตรวจพบตรงกับข้อมูลใน Threat Panel
+
+## Mock โดรนไม่ทราบฝ่าย
+
+- ใช้ไฟล์ `src/app/data/mockIntruders.js` กำหนดโดรนไม่ทราบฝ่าย 5 ลำให้อยู่ภายในรัศมี 3 กิโลเมตรจากฐานทัพ พร้อมสุ่มชื่อ (Alpha-Echo)
+- ฟังก์ชัน `createIntruderSeeds(basePosition)` ใช้สำหรับสร้าง mock seed เริ่มต้น เมื่อฐานทัพย้ายตำแหน่งจะเรียกสุ่มใหม่โดยอัตโนมัติ
+- ฟังก์ชัน `tickIntruderPositions(previous, basePosition)` ใช้สุ่มการเคลื่อนที่แบบ step เล็ก ๆ และบังคับให้อยู่ในรัศมีเดิม เพื่อจำลองการเคลื่อนที่ต่อเนื่องของโดรนไม่ทราบฝ่าย
+- `DefenseDashboard` ใช้ `setInterval` ทุก 4 วินาทีเรียก `tickIntruderPositions` ทำให้รายการโดรนใน Threat Panel และแผนที่อัปเดตตำแหน่งแบบเคลื่อนไหว

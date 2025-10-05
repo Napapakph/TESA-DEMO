@@ -16,6 +16,7 @@ import MissionControl from "@/app/components/dashboard/MissionControl";
 import FlightControlPanel from "@/app/components/dashboard/FlightControlPanel";
 import ThreatPanel from "@/app/components/dashboard/ThreatPanel";
 import AlertLogPanel from "@/app/components/dashboard/AlertLogPanel";
+import { createIntruderSeeds, tickIntruderPositions } from "@/app/data/mockIntruders";
 
 const markerIconRetina = typeof markerIcon2xUrl === "string" ? markerIcon2xUrl : markerIcon2xUrl.src;
 const markerIcon = typeof markerIconUrl === "string" ? markerIconUrl : markerIconUrl.src;
@@ -29,24 +30,6 @@ L.Icon.Default.mergeOptions({
 
 const BASE_POSITION = { lat: 14.2059, lng: 101.2134 };
 const EARTH_RADIUS_METERS = 6371000;
-
-const intruderSeeds = [
-  {
-    id: "alpha",
-    name: "โดรนไม่ทราบฝ่าย Alpha",
-    position: { lat: 14.2132, lng: 101.2188 },
-  },
-  {
-    id: "bravo",
-    name: "โดรนไม่ทราบฝ่าย Bravo",
-    position: { lat: 14.2036, lng: 101.2052 },
-  },
-  {
-    id: "charlie",
-    name: "โดรนไม่ทราบฝ่าย Charlie",
-    position: { lat: 14.1975, lng: 101.2205 },
-  },
-];
 
 // ฟังก์ชันแปลงองศาให้เป็นเรเดียนสำหรับสูตรคำนวณ
 function toRadians(value) {
@@ -123,9 +106,21 @@ function mgrsAccuracyForStep(step) {
   return 5;
 }
 
+function buildDetectionSources({ drone, base }) {
+  const sources = [];
+  if (drone) sources.push("drone");
+  if (base) sources.push("base");
+  return sources;
+}
+
+function detectionSummaryHasHit(summary) {
+  return Boolean(summary?.drone?.length || summary?.base?.length);
+}
+
 // คอมโพเนนต์หลักของแดชบอร์ดฝ่ายตั้งรับ
 export default function DefenseDashboard() {
   // ตัวชี้ถึง map และองค์ประกอบในแผนที่
+  const initialIntrudersRef = useRef(createIntruderSeeds(BASE_POSITION));
   const mapRef = useRef(null);
   const mapContainerRef = useRef(null);
   const droneMarkerRef = useRef(null);
@@ -140,6 +135,15 @@ export default function DefenseDashboard() {
   const latestDroneRef = useRef(null);
   const baseIntrudersRef = useRef(new Set());
   const routeManagerRef = useRef(null);
+  const scanContextRef = useRef({
+    dronePosition: BASE_POSITION,
+    detectionRadius: 600,
+    basePosition: BASE_POSITION,
+    baseDetectionRadius: 800,
+    baseMgrs: null,
+    isBaseScanEnabled: true,
+  });
+  const intruderSeedInitializedRef = useRef(false);
 
   // สถานะหลักของโดรนและระบบ
   const [drone, setDrone] = useState({
@@ -160,19 +164,15 @@ export default function DefenseDashboard() {
   });
   const [targetPosition, setTargetPosition] = useState(null);
   const [lastClicked, setLastClicked] = useState(null);
-  const [intruders, setIntruders] = useState(() =>
-    intruderSeeds.map((seed) => ({
-      ...seed,
-      distance: null,
-      distanceToBase: null,
-      isInside: false,
-      isNearBase: false,
-      mgrs: null,
-    })),
-  );
+  const [intruders, setIntruders] = useState(() => initialIntrudersRef.current);
   const [alertLog, setAlertLog] = useState([]);
+  const [scanTelemetry, setScanTelemetry] = useState(() => ({
+    auto: { isRealtime: false, lastDetectedAt: null },
+    manual: { lastDetectedAt: null },
+  }));
   const [isNavigating, setIsNavigating] = useState(false);
   const [scanMode, setScanMode] = useState("manual");
+  const [isBaseScanActive, setIsBaseScanActive] = useState(true);
   const [isMapReady, setIsMapReady] = useState(false);
 
   const baseMgrs = useMemo(
@@ -214,6 +214,38 @@ export default function DefenseDashboard() {
 
   useEffect(() => {
     basePositionRef.current = basePosition;
+  }, [basePosition]);
+  useEffect(() => {
+    scanContextRef.current = {
+      dronePosition: drone.position,
+      detectionRadius,
+      basePosition,
+      baseDetectionRadius,
+      baseMgrs,
+      isBaseScanEnabled: isBaseScanActive,
+    };
+  }, [drone.position, detectionRadius, basePosition, baseDetectionRadius, baseMgrs, isBaseScanActive]);
+
+  useEffect(() => {
+    if (!intruderSeedInitializedRef.current) {
+      intruderSeedInitializedRef.current = true;
+      return;
+    }
+
+    baseIntrudersRef.current = new Set();
+    const freshSeeds = createIntruderSeeds(basePosition);
+    initialIntrudersRef.current = freshSeeds;
+    setIntruders(freshSeeds);
+  }, [basePosition]);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setIntruders((prev) => tickIntruderPositions(prev, basePosition));
+    }, 4000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
   }, [basePosition]);
   useEffect(() => {
     if (!baseMarkerRef.current) return;
@@ -326,7 +358,7 @@ export default function DefenseDashboard() {
     gridLayerRef.current = L.layerGroup().addTo(map);
     intruderLayerRef.current = L.layerGroup().addTo(map);
 
-    intruderSeeds.forEach((intruder) => {
+    initialIntrudersRef.current.forEach((intruder) => {
       const intruderMarker = L.circleMarker(intruder.position, {
         radius: 6,
         color: "#f97316",
@@ -474,6 +506,7 @@ export default function DefenseDashboard() {
     intruders.forEach((intruder) => {
       const marker = intruderMarkersRef.current.get(intruder.id);
       if (!marker) return;
+      marker.setLatLng(intruder.position);
       marker.setStyle({
         color: intruder.isInside ? "#ef4444" : "#f97316",
         fillColor: intruder.isInside ? "#ef4444" : "#fb923c",
@@ -671,63 +704,97 @@ export default function DefenseDashboard() {
   }, [routeManagerRef]);
 
   // คำนวณการสแกนภัยคุกคามรอบพื้นที่
-  const handleScanIntruders = useCallback(() => {
+  const performScan = useCallback((options = {}) => {
+    const {
+      dronePosition,
+      detectionRadius: currentDetectionRadius,
+      basePosition: currentBasePosition,
+      baseDetectionRadius: currentBaseDetectionRadius,
+      baseMgrs: currentBaseMgrs,
+      isBaseScanEnabled,
+    } = scanContextRef.current;
+
+    const includeDrone = options.includeDrone ?? true;
+    const includeBase = options.includeBase ?? isBaseScanEnabled;
     const newlyEnteredBase = [];
+    const detectionSummary = { drone: [], base: [] };
 
     setIntruders((prev) => {
-      const nextBaseSet = new Set();
+      const nextBaseSet = includeBase ? new Set() : baseIntrudersRef.current;
 
       const updated = prev.map((intruder) => {
-        const distance = haversineDistance(drone.position, intruder.position);
-        const distanceToBase = haversineDistance(basePosition, intruder.position);
-        const isInside = distance <= detectionRadius;
-        const isNearBase = distanceToBase <= baseDetectionRadius;
+        const next = { ...intruder };
+        const distanceToDrone = haversineDistance(dronePosition, intruder.position);
+        const isWithinDroneRadius = includeDrone && distanceToDrone <= currentDetectionRadius;
+        let detectedByBase = false;
 
-        let intruderMgrs = intruder.mgrs;
-        if (!intruderMgrs) {
+        next.distance = distanceToDrone;
+
+        if ((includeDrone || includeBase) && !next.mgrs) {
           try {
-            intruderMgrs = mgrs.forward([intruder.position.lng, intruder.position.lat], 5);
+            next.mgrs = mgrs.forward([intruder.position.lng, intruder.position.lat], 5);
           } catch (error) {
-            intruderMgrs = null;
+            next.mgrs = null;
           }
         }
 
-        if (isNearBase) {
-          nextBaseSet.add(intruder.id);
-          if (!baseIntrudersRef.current.has(intruder.id)) {
-            newlyEnteredBase.push({
-              id: intruder.id,
-              name: intruder.name,
-              position: intruder.position,
-              mgrs: intruderMgrs,
-              distanceToDrone: distance,
-              distanceToBase,
-            });
-          }
+        if (isWithinDroneRadius) {
+          detectionSummary.drone.push({ id: intruder.id, name: intruder.name });
         }
 
-        return {
-          ...intruder,
-          distance,
-          distanceToBase,
-          isInside,
-          isNearBase,
-          mgrs: intruderMgrs,
-        };
+        if (includeBase) {
+          const distanceToBase = haversineDistance(currentBasePosition, intruder.position);
+          const isNearBase = distanceToBase <= currentBaseDetectionRadius;
+
+          next.distanceToBase = distanceToBase;
+          next.isNearBase = isNearBase;
+
+          if (isNearBase) {
+            detectedByBase = true;
+            detectionSummary.base.push({ id: intruder.id, name: intruder.name });
+            nextBaseSet.add(intruder.id);
+            if (!baseIntrudersRef.current.has(intruder.id)) {
+              newlyEnteredBase.push({
+                id: intruder.id,
+                name: intruder.name,
+                position: intruder.position,
+                mgrs: next.mgrs,
+                distanceToDrone,
+                distanceToBase,
+                detectedBy: buildDetectionSources({ drone: isWithinDroneRadius, base: true }),
+              });
+            }
+          }
+        } else {
+          next.isNearBase = false;
+          next.distanceToBase = null;
+        }
+
+        next.isInside = isWithinDroneRadius || detectedByBase;
+        next.detectedBy = buildDetectionSources({
+          drone: isWithinDroneRadius,
+          base: detectedByBase,
+        });
+
+        return next;
       });
 
-      baseIntrudersRef.current = nextBaseSet;
+      if (includeBase) {
+        baseIntrudersRef.current = nextBaseSet;
+      }
+
       return updated;
     });
 
-    if (newlyEnteredBase.length > 0) {
+    if (includeBase && newlyEnteredBase.length > 0) {
       const timestamp = new Date().toLocaleTimeString();
       setAlertLog((prev) => [
         {
           timestamp,
+          source: "base",
           drone: {
-            position: basePosition,
-            mgrs: baseMgrs,
+            position: currentBasePosition,
+            mgrs: currentBaseMgrs,
             label: "Base",
           },
           detected: newlyEnteredBase,
@@ -736,12 +803,43 @@ export default function DefenseDashboard() {
       ]);
       window.alert("Base alert: hostile drones detected within the base perimeter.");
     }
-  }, [drone.position, basePosition, detectionRadius, baseDetectionRadius, baseMgrs]);
 
-  useEffect(() => {
-    baseIntrudersRef.current = new Set();
-    handleScanIntruders();
-  }, [basePosition, baseDetectionRadius, handleScanIntruders]);
+    return detectionSummary;
+  }, []);
+
+  const handleScanIntruders = useCallback(() => {
+    const summary = performScan({ includeDrone: true });
+    const timestamp = new Date().toLocaleTimeString();
+
+    setScanTelemetry((prev) => {
+      if (scanMode === "auto") {
+        const hasDetection = detectionSummaryHasHit(summary);
+        const previousAuto = prev.auto ?? { isRealtime: false, lastDetectedAt: null };
+        return {
+          ...prev,
+          auto: {
+            isRealtime: hasDetection,
+            lastDetectedAt: hasDetection ? timestamp : previousAuto.lastDetectedAt,
+          },
+        };
+      }
+
+      if (detectionSummaryHasHit(summary)) {
+        return {
+          ...prev,
+          manual: {
+            lastDetectedAt: timestamp,
+          },
+        };
+      }
+
+      return prev;
+    });
+  }, [performScan, scanMode]);
+
+  const handleBaseScan = useCallback(() => {
+    performScan({ includeDrone: false, includeBase: true });
+  }, [performScan]);
 
   useEffect(() => {
     if (scanMode !== "auto") return;
@@ -756,6 +854,56 @@ export default function DefenseDashboard() {
       clearInterval(intervalId);
     };
   }, [scanMode, handleScanIntruders]);
+
+  useEffect(() => {
+    if (scanMode === "auto") return;
+
+    setScanTelemetry((prev) => {
+      if (!prev.auto?.isRealtime) return prev;
+      return {
+        ...prev,
+        auto: {
+          ...prev.auto,
+          isRealtime: false,
+        },
+      };
+    });
+  }, [scanMode]);
+
+  useEffect(() => {
+    if (!isBaseScanActive) {
+      baseIntrudersRef.current = new Set();
+      setIntruders((prev) =>
+        prev.map((intruder) => ({
+          ...intruder,
+          distanceToBase: null,
+          isNearBase: false,
+        })),
+      );
+      return;
+    }
+
+    handleBaseScan();
+  }, [isBaseScanActive, handleBaseScan]);
+
+  useEffect(() => {
+    if (!isBaseScanActive) return;
+
+    baseIntrudersRef.current = new Set();
+    handleBaseScan();
+  }, [basePosition, baseDetectionRadius, isBaseScanActive, handleBaseScan]);
+
+  useEffect(() => {
+    if (!isBaseScanActive) return;
+
+    const intervalId = setInterval(() => {
+      handleBaseScan();
+    }, 1000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [isBaseScanActive, handleBaseScan]);
 
   // เก็บบันทึกการแจ้งเตือนโดรนไม่ทราบฝ่ายที่เข้ามาใกล้
   const handleRaiseAlert = useCallback(async () => {
@@ -774,6 +922,8 @@ export default function DefenseDashboard() {
         intruderMgrs = null;
       }
 
+      const detectedSources = [...(intruder.detectedBy ?? [])];
+
       return {
         id: intruder.id,
         name: intruder.name,
@@ -783,6 +933,7 @@ export default function DefenseDashboard() {
           intruder.distance ?? haversineDistance(drone.position, intruder.position),
         distanceToBase:
           intruder.distanceToBase ?? haversineDistance(basePosition, intruder.position),
+        detectedBy: detectedSources,
       };
     });
 
@@ -796,6 +947,7 @@ export default function DefenseDashboard() {
 
     const entry = {
       timestamp,
+      source: "drone",
       drone: {
         position: drone.position,
         mgrs: droneMgrsSnapshot,
@@ -907,8 +1059,11 @@ export default function DefenseDashboard() {
           scanMode={scanMode}
           onScanModeChange={setScanMode}
           onScan={handleScanIntruders}
+          isBaseScanActive={isBaseScanActive}
+          onToggleBaseScan={() => setIsBaseScanActive((prev) => !prev)}
           onAlert={handleRaiseAlert}
           formatDistance={formatDistance}
+          scanTelemetry={scanTelemetry}
         />
         <AlertLogPanel alertLog={alertLog} formatDistance={formatDistance} />
       </section>

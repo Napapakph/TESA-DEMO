@@ -8,14 +8,14 @@ import markerIcon2xUrl from "leaflet/dist/images/marker-icon-2x.png";
 import markerIconUrl from "leaflet/dist/images/marker-icon.png";
 import markerShadowUrl from "leaflet/dist/images/marker-shadow.png";
 
-import ActionToolbar from "@/app/components/dashboard/ActionToolbar";
-import DashboardHeader from "@/app/components/dashboard/DashboardHeader";
-import MapInfoPanel from "@/app/components/dashboard/MapInfoPanel";
-import RouteLayerManager from "@/app/components/dashboard/RouteLayerManager";
-import MissionControl from "@/app/components/dashboard/MissionControl";
-import FlightControlPanel from "@/app/components/dashboard/FlightControlPanel";
-import ThreatPanel from "@/app/components/dashboard/ThreatPanel";
-import AlertLogPanel from "@/app/components/dashboard/AlertLogPanel";
+import ActionToolbar from "@/app/components/intregration/ActionToolbar";
+import DashboardHeader from "@/app/components/intregration/DashboardHeader";
+import MapInfoPanel from "@/app/components/intregration/MapInfoPanel";
+import RouteLayerManager from "@/app/components/intregration/RouteLayerManager";
+import MissionControl from "@/app/components/intregration/MissionControl";
+import FlightControlPanel from "@/app/components/intregration/FlightControlPanel";
+import ThreatPanel from "@/app/components/intregration/ThreatPanel";
+import AlertLogPanel from "@/app/components/intregration/AlertLogPanel";
 import { createIntruderSeeds, tickIntruderPositions } from "@/app/data/mockIntruders";
 
 const markerIconRetina = typeof markerIcon2xUrl === "string" ? markerIcon2xUrl : markerIcon2xUrl.src;

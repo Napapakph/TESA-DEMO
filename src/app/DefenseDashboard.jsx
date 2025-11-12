@@ -9,7 +9,7 @@ import "@/app/styles/defense-dashboard.css";
 
 mapboxgl.accessToken = "pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw";
 
-const SOCKET_URL = "http://192.168.1.104:3000";
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://13.229.79.193:3000/";
 const BASE_POSITION = { lat: 14.2059, lng: 101.2134 };
 const DRONE_ICON_SRC = "/drone.png";
 const CARD_UPDATE_WINDOW_MS = 5000;
@@ -138,7 +138,7 @@ function formatCameraValue(value) {
 }
 
 function renderDronePopupContent(intruder) {
-  const imageSource = intruder.imgbase64 || DRONE_ICON_SRC;
+  const imageSource = DRONE_ICON_SRC;
   const safeName = escapeHtml(intruder.name ?? intruder.id ?? "Unknown Drone");
   const safeId = escapeHtml(intruder.id ?? "-");
 
@@ -159,7 +159,7 @@ function renderDronePopupContent(intruder) {
 
 function createDroneMarkerElement(intruder) {
   const heading = Number.isFinite(intruder.direction) ? intruder.direction : 0;
-  const imageSource = intruder.imgbase64 || DRONE_ICON_SRC;
+  const imageSource = DRONE_ICON_SRC;
   
   const el = document.createElement("div");
   el.className = "drone-marker";
@@ -634,11 +634,6 @@ export default function DefenseDashboard() {
           wrapper.style.transform = `rotate(${heading}deg)`;
         }
         
-        const img = existing.element.querySelector(".drone-marker-image");
-        if (img && intruder.imgbase64) {
-          img.src = intruder.imgbase64;
-        }
-
         existing.popup.setHTML(renderDronePopupContent(intruder));
       }
     });
@@ -739,156 +734,202 @@ export default function DefenseDashboard() {
         </div>
       </header>
 
-      <div ref={mapContainerRef} className="map-layer" />
-
-      <aside className="sidebar-overlay">
-        <h2>Drone Status</h2>
-        <div className="drone-list">
-          {droneCards.length === 0 ? (
-            <div className="empty-state">Awaiting drone telemetry…</div>
-          ) : (
-            droneCards.map((card) => {
-              const inlineImages = card.images.slice(0, MAX_INLINE_IMAGES);
-              const hasOverflowImages = card.images.length > MAX_INLINE_IMAGES;
-              const showInlineImages = inlineImages.length > 0 && !hasOverflowImages;
-
-              return (
-                <article
-                  className={`drone-card${hasOverflowImages ? " drone-card--compact" : ""}`}
-                  key={`${card.id}-${card.lastSeen}`}
-                >
-                  <div className="drone-card-header">
-                    <div className="drone-card-title">{card.name}</div>
-                    <span
-                      className="camera-badge"
-                      style={{ backgroundColor: card.cameraColor }}
-                      title={`Camera ${card.camId || "Unknown"}`}
-                    >
-                      {card.camId || "Unknown"}
-                    </span>
-                  </div>
-
-                  <div className="drone-card-meta-grid">
-                    <div>
-                      <span className="meta-label">ID</span>
-                      <span className="meta-value">{card.id}</span>
-                    </div>
-                    <div>
-                      <span className="meta-label">Lat</span>
-                      <span className="meta-value">
-                        {card.position && Number.isFinite(card.position.lat)
-                          ? card.position.lat.toFixed(5)
-                          : "—"}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="meta-label">Lon</span>
-                      <span className="meta-value">
-                        {card.position && Number.isFinite(card.position.lng)
-                          ? card.position.lng.toFixed(5)
-                          : "—"}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="meta-label">Velocity</span>
-                      <span className="meta-value">{formatVelocity(card.velocity)}</span>
-                    </div>
-                    <div>
-                      <span className="meta-label">Direction</span>
-                      <span className="meta-value">{formatDirection(card.direction)}</span>
-                    </div>
-                    <div>
-                      <span className="meta-label">Last Seen</span>
-                      <span className="meta-value">{formatTimestamp(card.lastSeen)}</span>
-                    </div>
-                  </div>
-
-                  {showInlineImages && (
-                    <div className="drone-card-gallery">
-                      {inlineImages.map((image, index) => (
-                        <div className="drone-thumb" key={`${card.id}-img-${index}`}>
-                          <img src={image.src} alt={`${card.name} snapshot ${index + 1}`} />
-                          <span className="drone-thumb-time">{formatTimestamp(image.capturedAt)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {hasOverflowImages && (
-                    <div className="drone-card-actions">
-                      <span>{card.images.length} images captured</span>
-                      <button
-                        type="button"
-                        className="view-more-button"
-                        onClick={() => openImageViewer(card)}
-                      >
-                        View more
-                      </button>
-                    </div>
-                  )}
-                </article>
-              );
-            })
-          )}
-        </div>
-      </aside>
-
-      <section className="camera-overlay">
-        <form className="camera-form" onSubmit={handleCameraSubmit}>
-          <h3>Camera Credentials</h3>
-          <label>
-            Camera ID
-            <input
-              type="text"
-              value={cameraIdInput}
-              onChange={(event) => setCameraIdInput(event.target.value)}
-              placeholder="cam001"
-            />
-          </label>
-          <label>
-            Token
-            <input
-              type="password"
-              value={tokenInput}
-              onChange={(event) => setTokenInput(event.target.value)}
-              placeholder="••••••"
-            />
-          </label>
-          <button type="submit" className="toolbar-button">
-            Save
-          </button>
-        </form>
-        <div className="camera-details">
-          <div className="camera-overview">
-            {selectedCameraId ? (
-              <>
-                <div>Camera ID: {cameraInfoDetails?.id ?? selectedCameraId}</div>
-                <div>Name: {cameraInfoDetails?.name ?? "Unknown"}</div>
-                <div>Location: {cameraInfoDetails?.location ?? "Unknown"}</div>
-                <div>Institute: {cameraInfoDetails?.institute ?? cameraInfoDetails?.Institute ?? "—"}</div>
-                <div>Sort Order: {cameraInfoDetails?.sort ?? "—"}</div>
-                <div>Token: {cameraInfoDetails?.token ?? (cameraToken ? "••••••" : "Not set")}</div>
-              </>
+      <div className="dashboard-body">
+        <aside className="sidebar-panel">
+          <h2>Drone Status</h2>
+          <div className="drone-list">
+            {droneCards.length === 0 ? (
+              <div className="empty-state">Awaiting drone telemetry…</div>
             ) : (
-              <div className="camera-status camera-idle">No camera selected</div>
+              droneCards.map((card) => {
+                const inlineImages = card.images.slice(0, MAX_INLINE_IMAGES);
+                const hasOverflowImages = card.images.length > MAX_INLINE_IMAGES;
+                const showInlineImages = inlineImages.length > 0 && !hasOverflowImages;
+
+                return (
+                  <article
+                    className={`drone-card${hasOverflowImages ? " drone-card--compact" : ""}`}
+                    key={`${card.id}-${card.lastSeen}`}
+                  >
+                    <div className="drone-card-header">
+                      <div className="drone-card-title">{card.name}</div>
+                      <span
+                        className="camera-badge"
+                        style={{ backgroundColor: card.cameraColor }}
+                        title={`Camera ${card.camId || "Unknown"}`}
+                      >
+                        {card.camId || "Unknown"}
+                      </span>
+                    </div>
+
+                    <div className="drone-card-meta-grid">
+                      <div>
+                        <span className="meta-label">ID</span>
+                        <span className="meta-value">{card.id}</span>
+                      </div>
+                      <div>
+                        <span className="meta-label">Lat</span>
+                        <span className="meta-value">
+                          {card.position && Number.isFinite(card.position.lat)
+                            ? card.position.lat.toFixed(5)
+                            : "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="meta-label">Lon</span>
+                        <span className="meta-value">
+                          {card.position && Number.isFinite(card.position.lng)
+                            ? card.position.lng.toFixed(5)
+                            : "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="meta-label">Lat</span>
+                        <span className="meta-value">
+                          {card.position && Number.isFinite(card.position.lat)
+                            ? card.position.lat.toFixed(5)
+                            : "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="meta-label">Lon</span>
+                        <span className="meta-value">
+                          {card.position && Number.isFinite(card.position.lng)
+                            ? card.position.lng.toFixed(5)
+                            : "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="meta-label">Velocity</span>
+                        <span className="meta-value">{formatVelocity(card.velocity)}</span>
+                      </div>
+                      <div>
+                        <span className="meta-label">Direction</span>
+                        <span className="meta-value">{formatDirection(card.direction)}</span>
+                      </div>
+                      <div>
+                        <span className="meta-label">Last Seen</span>
+                        <span className="meta-value">{formatTimestamp(card.lastSeen)}</span>
+                      </div>
+                    </div>
+
+                    {showInlineImages && (
+                      <div className="drone-card-gallery">
+                        {inlineImages.map((image, index) => (
+                          <div className="drone-thumb" key={`${card.id}-img-${index}`}>
+                            <img src={image.src} alt={`${card.name} snapshot ${index + 1}`} />
+                            <span className="drone-thumb-time"></span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {hasOverflowImages && (
+                      <div className="drone-card-actions">
+                        <span>{card.images.length} images captured</span>
+                        <button
+                          type="button"
+                          className="view-more-button"
+                          onClick={() => openImageViewer(card)}
+                        >
+                          View more
+                        </button>
+                      </div>
+                    )}
+                  </article>
+                );
+              })
             )}
           </div>
+        </aside>
 
- 
-        </div>
-      </section>
+        <main className="map-wrapper">
+          <div ref={mapContainerRef} className="map-layer" />
 
-      <div className="coords-overlay">
-        <h3>Map Coordinates</h3>
-        {lastClicked ? (
-          <ul>
-            <li>Lat: {lastClicked.lat.toFixed(5)}</li>
-            <li>Lon: {lastClicked.lng.toFixed(5)}</li>
-            <li>MGRS: {lastClickedMgrs ?? "N/A"}</li>
-          </ul>
-        ) : (
-          <p>Click anywhere on the map to capture coordinates.</p>
-        )}
+          <section className="camera-overlay">
+            <form className="camera-form" onSubmit={handleCameraSubmit}>
+              <h3>Camera Credentials</h3>
+              <label>
+                Camera ID
+                <input
+                  type="text"
+                  value={cameraIdInput}
+                  onChange={(event) => setCameraIdInput(event.target.value)}
+                  placeholder="cam001"
+                />
+              </label>
+              <label>
+                Token
+                <input
+                  type="password"
+                  value={tokenInput}
+                  onChange={(event) => setTokenInput(event.target.value)}
+                  placeholder="••••••"
+                />
+              </label>
+              <button type="submit" className="toolbar-button">
+                Save
+              </button>
+            </form>
+            <div className="camera-details">
+              <div className="camera-overview">
+                {selectedCameraId ? (
+                  <>
+                    <div>Camera ID: {cameraInfoDetails?.id ?? selectedCameraId}</div>
+                    <div>Name: {cameraInfoDetails?.name ?? "Unknown"}</div>
+                    <div>Location: {cameraInfoDetails?.location ?? "Unknown"}</div>
+                    <div>Institute: {cameraInfoDetails?.institute ?? cameraInfoDetails?.Institute ?? "—"}</div>
+                    <div>Sort Order: {cameraInfoDetails?.sort ?? "—"}</div>
+                    <div>Token: {cameraInfoDetails?.token ?? (cameraToken ? "••••••" : "Not set")}</div>
+                  </>
+                ) : (
+                  <div className="camera-status camera-idle">No camera selected</div>
+                )}
+              </div>
+
+              <div className="camera-fetch-result">
+                {cameraInfoStatus === "loading" ? (
+                  <div className="camera-status camera-loading">กำลังโหลดข้อมูลกล้อง…</div>
+                ) : cameraInfoStatus === "error" ? (
+                  <div className="camera-status camera-error">
+                    {cameraInfoError || "ไม่สามารถโหลดข้อมูลกล้องได้"}
+                    <button type="button" className="camera-retry-button" onClick={handleRetryCameraInfo}>
+                      ลองใหม่
+                    </button>
+                  </div>
+                ) : cameraInfoStatus === "success" && cameraInfoEntries.length > 0 ? (
+                  <div className="camera-info-grid">
+                    {cameraInfoEntries.map(([key, value]) => (
+                      <div className="camera-info-row" key={key}>
+                        <span className="camera-info-key">{formatLabel(key)}</span>
+                        <span className="camera-info-value">{formatCameraValue(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="camera-status camera-idle">
+                    {selectedCameraId && cameraToken
+                      ? "ไม่มีข้อมูลเพิ่มเติมจากกล้อง"
+                      : "กรอก Camera ID และ Token จากนั้นกด Save เพื่อโหลดข้อมูล"}
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <div className="coords-overlay">
+            <h3>Map Coordinates</h3>
+            {lastClicked ? (
+              <ul>
+                <li>Lat: {lastClicked.lat.toFixed(5)}</li>
+                <li>Lon: {lastClicked.lng.toFixed(5)}</li>
+                <li>MGRS: {lastClickedMgrs ?? "N/A"}</li>
+              </ul>
+            ) : (
+              <p>Click anywhere on the map to capture coordinates.</p>
+            )}
+          </div>
+        </main>
       </div>
 
       {imageViewer.isOpen && (

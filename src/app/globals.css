@@ -28,7 +28,7 @@ body {
 
 .page-shell {
   min-height: 100vh;
-  padding: clamp(16px, 4vw, 24px);
+  padding: clamp(0px, 4vw, 0px);
 }
 
 .dashboard {

@@ -1,5 +1,6 @@
 import { Geist, Geist_Mono, Orbitron, Rajdhani, Exo_2 } from "next/font/google";
 import "./globals.css";
+import "./styles/dashboard-global.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

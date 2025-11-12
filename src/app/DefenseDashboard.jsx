@@ -5,484 +5,202 @@ import { io } from "socket.io-client";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import mgrs from "mgrs";
-import markerIcon2xUrl from "leaflet/dist/images/marker-icon-2x.png";
-import markerIconUrl from "leaflet/dist/images/marker-icon.png";
-import markerShadowUrl from "leaflet/dist/images/marker-shadow.png";
-
-import ActionToolbar from "@/app/components/intregration/ActionToolbar";
-import DashboardHeader from "@/app/components/intregration/DashboardHeader";
-import MapInfoPanel from "@/app/components/intregration/MapInfoPanel";
-import RouteLayerManager from "@/app/components/intregration/RouteLayerManager";
-import MissionControl from "@/app/components/intregration/MissionControl";
-import FlightControlPanel from "@/app/components/intregration/FlightControlPanel";
-import ThreatPanel from "@/app/components/intregration/ThreatPanel";
-import AlertLogPanel from "@/app/components/intregration/AlertLogPanel";
-
-const markerIconRetina = typeof markerIcon2xUrl === "string" ? markerIcon2xUrl : markerIcon2xUrl.src;
-const markerIcon = typeof markerIconUrl === "string" ? markerIconUrl : markerIconUrl.src;
-const markerShadow = typeof markerShadowUrl === "string" ? markerShadowUrl : markerShadowUrl.src;
-
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: markerIconRetina,
-  iconUrl: markerIcon,
-  shadowUrl: markerShadow,
-});
-
-const BASE_POSITION = { lat: 14.2059, lng: 101.2134 };
-const EARTH_RADIUS_METERS = 6371000;
+import "@/app/styles/defense-dashboard.css";
 
 const SOCKET_URL = "http://192.168.1.104:3000";
-
-const LIVE_INTRUDER_SAMPLE = [
-  {
-    droneId: 0,
-    type: "DJIAir",
-    lat: 14.30015,
-    lng: 101.17104,
-    velocity: 0.83,
-    direction: 357.5,
-    time: "2025-11-11T19:21:24.000Z",
-    isDrone: true,
-    cam_id: "cam002",
-  },
-  {
-    droneId: 1,
-    type: "AutelEvo",
-    lat: 14.3088,
-    lng: 101.15787,
-    velocity: 12.84,
-    direction: 343.4,
-    time: "2025-11-11T19:21:24.000Z",
-    isDrone: true,
-    cam_id: "cam002",
-  },
-  {
-    droneId: 2,
-    type: "DJIMavic",
-    lat: 14.29947,
-    lng: 101.1585,
-    velocity: 10.55,
-    direction: 145,
-    time: "2025-11-11T19:21:24.000Z",
-    isDrone: true,
-    cam_id: "cam001",
-  },
-  {
-    droneId: 3,
-    type: "ParrotAnafi",
-    lat: 14.30618,
-    lng: 101.16148,
-    velocity: 12.57,
-    direction: 317.6,
-    time: "2025-11-11T19:21:24.000Z",
-    isDrone: true,
-    cam_id: "cam001",
-  },
-];
+const BASE_POSITION = { lat: 14.2059, lng: 101.2134 };
+const DRONE_ICON_SRC = "/drone.png";
 
 function createLiveIntruderEntry(entry, previous) {
   const prev = previous ?? {};
-  
-  // Validate and ensure position exists
-  // Support both 'lat'/'lng' and 'lat'/'lon' formats
-  const lat = typeof entry.lat === 'number' && !isNaN(entry.lat) ? entry.lat : null;
-  const lng = typeof entry.lon === 'number' && !isNaN(entry.lon) 
-    ? entry.lon 
-    : (typeof entry.lng === 'number' && !isNaN(entry.lng) ? entry.lng : null);
-  
-  // Use previous position if current is invalid
-  const position = (lat !== null && lng !== null) 
+
+  const rawLat = typeof entry.lat === "number" ? entry.lat : entry.latitude;
+  const rawLng = typeof entry.lng === "number" ? entry.lng : entry.lon ?? entry.longitude;
+  const lat = Number.isFinite(rawLat) ? rawLat : null;
+  const lng = Number.isFinite(rawLng) ? rawLng : null;
+  const position = lat !== null && lng !== null
     ? { lat, lng }
-    : (prev.position && typeof prev.position.lat === 'number' && typeof prev.position.lng === 'number')
-      ? prev.position
-      : { lat: 0, lng: 0 }; // Fallback to default position
-  
-  // Support both 'id' and 'droneId' for drone identification
-  const droneId = entry.id ?? entry.droneId ?? 'unknown';
-  
-  // Convert timestamp if it's a Unix timestamp (number) or ISO string
-  let lastSeen = entry.time;
-  if (typeof entry.time === 'number') {
-    // Unix timestamp in seconds, convert to ISO string
-    lastSeen = new Date(entry.time * 1000).toISOString();
-  } else if (typeof entry.time === 'string') {
-    lastSeen = entry.time;
-  } else {
-    lastSeen = prev.lastSeen ?? new Date().toISOString();
+    : prev.position ?? { lat: BASE_POSITION.lat, lng: BASE_POSITION.lng };
+
+  const droneId = entry.id ?? entry.droneId ?? prev.id ?? "unknown";
+
+  let lastSeen = entry.time ?? entry.timestamp ?? prev.lastSeen ?? new Date().toISOString();
+  if (typeof lastSeen === "number") {
+    lastSeen = new Date(lastSeen * 1000).toISOString();
   }
-  
+
   return {
     id: String(droneId),
-    name: entry.type ?? `Drone ${droneId}`,
+    name: entry.type ?? prev.name ?? `Drone ${droneId}`,
     position,
-    velocity: typeof entry.velocity === 'number' ? entry.velocity : (prev.velocity ?? 0),
-    direction: typeof entry.direction === 'number' ? entry.direction : (prev.direction ?? 0),
-    lastSeen,
-    camId: entry.cam_id ?? entry.camId ?? prev.camId ?? '',
-    isDrone: entry.isDrone ?? prev.isDrone ?? true,
-    distance: prev.distance ?? null,
-    distanceToBase: prev.distanceToBase ?? null,
-    isInside: prev.isInside ?? false,
-    isNearBase: prev.isNearBase ?? false,
-    mgrs: prev.mgrs ?? null,
-    detectedBy: prev.detectedBy ? [...prev.detectedBy] : [],
+    velocity: Number.isFinite(entry.velocity)
+      ? entry.velocity
+      : Number.isFinite(prev.velocity) ? prev.velocity : null,
+    direction: Number.isFinite(entry.direction)
+      ? entry.direction
+      : Number.isFinite(prev.direction) ? prev.direction : 0,
+    camId: entry.cam_id ?? entry.cameraId ?? entry.camId ?? prev.camId ?? "",
     frame: entry.frame ?? prev.frame ?? null,
     imgbase64: entry.imgbase64 ?? prev.imgbase64 ?? null,
+    lastSeen,
   };
 }
 
 function buildLiveIntruders(payload, previous = []) {
   const previousMap = new Map(previous.map((intruder) => [intruder.id, intruder]));
-  
-  // Handle different payload structures
-  let dataArray = null;
-  
-  if (Array.isArray(payload)) {
-    // Direct array
-    dataArray = payload;
-  } else if (payload && typeof payload === 'object') {
-    // Object with 'object' property (new format)
-    if (Array.isArray(payload.object)) {
-      dataArray = payload.object;
-    } else if (Array.isArray(payload.objects)) {
-      dataArray = payload.objects;
-    } else if (Array.isArray(payload.drones)) {
-      dataArray = payload.drones;
-    } else {
-      // Single object, wrap in array
-      dataArray = [payload];
-    }
+
+  if (!Array.isArray(payload)) {
+    return previous;
   }
-  
-  if (!dataArray || dataArray.length === 0) {
-    return previous; // Return previous if no new data
-  }
-  
-  return dataArray.map((entry) => {
-    const entryId = String(entry.id ?? entry.droneId ?? 'unknown');
-    return createLiveIntruderEntry(entry, previousMap.get(entryId));
+
+  return payload.map((entry) => {
+    const entryId = String(entry.id ?? entry.droneId ?? "unknown");
+    const prev = previousMap.get(entryId);
+    return createLiveIntruderEntry(entry, prev);
   });
 }
 
-// ฟังก์ชันแปลงองศาให้เป็นเรเดียนสำหรับสูตรคำนวณ
-function toRadians(value) {
-  return (value * Math.PI) / 180;
+function escapeHtml(value) {
+  if (typeof value !== "string") return "";
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      case "'":
+        return "&#39;";
+      default:
+        return char;
+    }
+  });
 }
 
-// ฟังก์ชันคำนวณระยะทางระหว่างสองพิกัดด้วยสูตร Haversine
-function haversineDistance(origin, destination) {
-  const dLat = toRadians(destination.lat - origin.lat);
-  const dLng = toRadians(destination.lng - origin.lng);
-  const lat1 = toRadians(origin.lat);
-  const lat2 = toRadians(destination.lat);
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return EARTH_RADIUS_METERS * c;
+function formatVelocity(value) {
+  if (!Number.isFinite(value)) return "N/A";
+  return `${value.toFixed(2)} m/s`;
 }
 
-// ฟังก์ชันคำนวณทิศทาง (bearing) ระหว่างสองพิกัด
-function bearingBetween(origin, destination) {
-  const lat1 = toRadians(origin.lat);
-  const lat2 = toRadians(destination.lat);
-  const dLng = toRadians(destination.lng - origin.lng);
-
-  const y = Math.sin(dLng) * Math.cos(lat2);
-  const x =
-    Math.cos(lat1) * Math.sin(lat2) -
-    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
-  const brng = (Math.atan2(y, x) * 180) / Math.PI;
-  return (brng + 360) % 360;
+function formatDirection(value) {
+  if (!Number.isFinite(value)) return "N/A";
+  return `${value.toFixed(1)}°`;
 }
 
-// ฟังก์ชันจัดรูปแบบระยะทางให้อ่านง่าย
-function formatDistance(value) {
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(2)} กม.`;
-  }
-  return `${value.toFixed(0)} เมตร`;
+function renderDronePopupContent(intruder) {
+  const imageSource = intruder.imgbase64 || DRONE_ICON_SRC;
+  const safeName = escapeHtml(intruder.name ?? intruder.id ?? "Unknown Drone");
+  const safeId = escapeHtml(intruder.id ?? "-");
+
+  return `
+    <div class="drone-popup-card">
+      <div class="drone-popup-media">
+        <img src="${escapeHtml(imageSource)}" alt="${safeName}">
+      </div>
+      <div class="drone-popup-body">
+        <div class="drone-popup-title">${safeName}</div>
+        <div class="drone-popup-meta">ID: ${safeId}</div>
+        <div class="drone-popup-meta">Velocity: ${escapeHtml(formatVelocity(intruder.velocity))}</div>
+        <div class="drone-popup-meta">Direction: ${escapeHtml(formatDirection(intruder.direction))}</div>
+      </div>
+    </div>
+  `;
 }
 
-// ฟังก์ชันแปลงองศาให้เป็นข้อความทิศ
-function headingToText(heading) {
-  const directions = [
-    "เหนือ",
-    "ตะวันออกเฉียงเหนือ",
-    "ตะวันออก",
-    "ตะวันออกเฉียงใต้",
-    "ใต้",
-    "ตะวันตกเฉียงใต้",
-    "ตะวันตก",
-    "ตะวันตกเฉียงเหนือ",
-  ];
-  const index = Math.round(heading / 45) % directions.length;
-  return directions[index];
+function createIntruderIcon(intruder) {
+  const heading = Number.isFinite(intruder.direction) ? intruder.direction : 0;
+  const imageSource = intruder.imgbase64 || DRONE_ICON_SRC;
+  const safeSource = escapeHtml(imageSource);
+  return L.divIcon({
+    className: "drone-marker",
+    html: `
+      <div class="drone-marker-wrapper" style="transform: rotate(${heading}deg)">
+        <img class="drone-marker-image" src="${safeSource}" alt="${escapeHtml(intruder.name ?? "drone")}" />
+      </div>
+    `,
+    iconSize: [48, 48],
+    iconAnchor: [24, 24],
+  });
 }
 
-// ฟังก์ชันเลือกระยะห่างของเส้นกริดตามระดับซูม
-function chooseGridStep(zoom) {
-  if (zoom >= 16) return 200;
-  if (zoom >= 14) return 500;
-  if (zoom >= 12) return 1000;
-  if (zoom >= 10) return 2000;
-  return 5000;
-}
-
-// ฟังก์ชันเลือกความละเอียดของ MGRS ให้เหมาะกับระยะกริด
-function mgrsAccuracyForStep(step) {
-  if (step >= 5000) return 1;
-  if (step >= 2000) return 2;
-  if (step >= 1000) return 3;
-  if (step >= 500) return 4;
-  return 5;
-}
-
-function buildDetectionSources({ drone, base }) {
-  const sources = [];
-  if (drone) sources.push("drone");
-  if (base) sources.push("base");
-  return sources;
-}
-
-function detectionSummaryHasHit(summary) {
-  return Boolean(summary?.drone?.length || summary?.base?.length);
-}
-
-// คอมโพเนนต์หลักของแดชบอร์ดฝ่ายตั้งรับ
 export default function DefenseDashboard() {
-  // ตัวชี้ถึง map และองค์ประกอบในแผนที่
-  const initialIntrudersRef = useRef(buildLiveIntruders(LIVE_INTRUDER_SAMPLE));
   const mapRef = useRef(null);
   const mapContainerRef = useRef(null);
-  const droneMarkerRef = useRef(null);
-  const detectionCircleRef = useRef(null);
-  const baseDetectionCircleRef = useRef(null);
-  const gridLayerRef = useRef(null);
   const intruderLayerRef = useRef(null);
   const intruderMarkersRef = useRef(new Map());
-  const baseMarkerRef = useRef(null);
-  const basePositionRef = useRef(BASE_POSITION);
-  const animationRef = useRef(null);
-  const latestDroneRef = useRef(null);
-  const baseIntrudersRef = useRef(new Set());
-  const routeManagerRef = useRef(null);
-  const scanContextRef = useRef({
-    dronePosition: BASE_POSITION,
-    detectionRadius: 600,
-    basePosition: BASE_POSITION,
-    baseDetectionRadius: 800,
-    baseMgrs: null,
-    isBaseScanEnabled: true,
-  });
-  const intruderSeedInitializedRef = useRef(false);
 
-  // สถานะหลักของโดรนและระบบ
-  const [drone, setDrone] = useState({
-    position: BASE_POSITION,
-    altitude: 120,
-    heading: 35,
-    speed: 18,
-  });
-  const [basePosition, setBasePosition] = useState(BASE_POSITION);
-  const [detectionRadius, setDetectionRadius] = useState(600);
-  const [baseDetectionRadius, setBaseDetectionRadius] = useState(800);
-  const [targetInput, setTargetInput] = useState({
-    lat: "",
-    lng: "",
-    mgrsZone: "",
-    mgrsGrid: "",
-    mgrsCoord: "",
-  });
-  const [targetPosition, setTargetPosition] = useState(null);
+  const [socketStatus, setSocketStatus] = useState("connecting");
+  const [intruders, setIntruders] = useState([]);
+  const [cameraInfo, setCameraInfo] = useState([]);
+  const [cameraIdInput, setCameraIdInput] = useState("");
+  const [tokenInput, setTokenInput] = useState("");
+  const [selectedCameraId, setSelectedCameraId] = useState("");
+  const [cameraToken, setCameraToken] = useState("");
   const [lastClicked, setLastClicked] = useState(null);
-  const [intruders, setIntruders] = useState(() => initialIntrudersRef.current);
-  const [alertLog, setAlertLog] = useState([]);
-  const [scanTelemetry, setScanTelemetry] = useState(() => ({
-    auto: { isRealtime: false, lastDetectedAt: null },
-    manual: { lastDetectedAt: null },
-  }));
-  const [isNavigating, setIsNavigating] = useState(false);
-  const [scanMode, setScanMode] = useState("manual");
-  const [isBaseScanActive, setIsBaseScanActive] = useState(true);
-  const [isMapReady, setIsMapReady] = useState(false);
+  const [lastClickedMgrs, setLastClickedMgrs] = useState(null);
 
-  const baseMgrs = useMemo(
-    () => mgrs.forward([basePosition.lng, basePosition.lat], 5),
-    [basePosition],
-  );
+  const activeCamera = useMemo(() => {
+    if (!selectedCameraId) return null;
+    return cameraInfo.find((cam) => cam.cam_id === selectedCameraId) ?? null;
+  }, [cameraInfo, selectedCameraId]);
 
-  // ดึงสถานะเริ่มต้นจาก API จำลอง
-  useEffect(() => {
-    let cancelled = false;
-    const loadSnapshot = async () => {
-      try {
-        const response = await fetch("/api/drone");
-        if (!response.ok) return;
-        const data = await response.json();
-        if (cancelled) return;
-        setDrone((prev) => ({
-          ...prev,
-          position: data.position || prev.position,
-          altitude: data.altitude ?? prev.altitude,
-          heading: data.heading ?? prev.heading,
-        }));
-        setDetectionRadius(data.detectionRadius ?? detectionRadius);
-      } catch (error) {
-        // ไม่ต้องทำอะไรหากเรียก API จำลองล้มเหลว
-      }
-    };
-
-    loadSnapshot();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    console.log("[DefenseDashboard] Initializing Socket.IO connection to:", SOCKET_URL);
-    const socket = io(SOCKET_URL, {
-      transports: ["websocket", "polling"],
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: 5,
-    });
-
-    socket.on("connect", () => {
-      console.log("[DefenseDashboard] Socket.IO connected");
-    });
-
-    socket.on("disconnect", () => {
-      console.log("[DefenseDashboard] Socket.IO disconnected");
-    });
-
-    socket.on("connect_error", (error) => {
-      console.error("[DefenseDashboard] Socket.IO connection error:", error);
-    });
-
-    socket.on("reconnect", (attemptNumber) => {
-      console.log("[DefenseDashboard] Socket.IO reconnected after", attemptNumber, "attempts");
-    });
-
-    // Handle drone data from Socket.IO
-    // Expected format: { time, side, cam_info: [...], object: [...] }
-    const handleDroneData = (payload) => {
-      console.log("[DefenseDashboard] Received data from Socket.IO:", payload);
-      
-      // Handle the new payload structure with 'object' array
-      if (payload && typeof payload === 'object') {
-        // Extract 'object' array from payload
-        const objectArray = payload.object ?? payload.objects ?? payload.drones;
-        
-        if (Array.isArray(objectArray) && objectArray.length > 0) {
-          console.log(`[DefenseDashboard] Processing ${objectArray.length} drone objects`);
-          setIntruders((prev) => buildLiveIntruders(objectArray, prev));
-        } else if (Array.isArray(payload)) {
-          // Fallback: if payload is directly an array
-          console.log(`[DefenseDashboard] Processing payload as direct array (${payload.length} items)`);
-          setIntruders((prev) => buildLiveIntruders(payload, prev));
-        } else {
-          console.warn("[DefenseDashboard] No valid object array found in payload");
-        }
-      } else if (Array.isArray(payload)) {
-        // Direct array format (backward compatibility)
-        console.log(`[DefenseDashboard] Processing payload as direct array (${payload.length} items)`);
-        setIntruders((prev) => buildLiveIntruders(payload, prev));
-      } else {
-        console.warn("[DefenseDashboard] Invalid payload format:", payload);
-      }
-    };
-
-    // Listen for various Socket.IO event names
-    socket.on("drone_update", handleDroneData);
-    socket.on("drones", handleDroneData);
-    socket.on("drone-data", handleDroneData);
-    socket.on("data", handleDroneData);
-    socket.on("message", handleDroneData);
-
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
-
-  // เก็บสถานะโดรนล่าสุดไว้ใช้งานใน animation
-  useEffect(() => {
-    latestDroneRef.current = drone;
-  }, [drone]);
-
-  useEffect(() => {
-    basePositionRef.current = basePosition;
-  }, [basePosition]);
-  useEffect(() => {
-    scanContextRef.current = {
-      dronePosition: drone.position,
-      detectionRadius,
-      basePosition,
-      baseDetectionRadius,
-      baseMgrs,
-      isBaseScanEnabled: isBaseScanActive,
-    };
-  }, [drone.position, detectionRadius, basePosition, baseDetectionRadius, baseMgrs, isBaseScanActive]);
-
-  useEffect(() => {
-    baseIntrudersRef.current = new Set();
-  }, [basePosition]);
-  useEffect(() => {
-    if (!baseMarkerRef.current) return;
-    baseMarkerRef.current.setLatLng(basePosition);
-  }, [basePosition]);
-
-  const deriveMgrsFields = useCallback((lat, lng) => {
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return { zone: "", grid: "", coord: "" };
-    }
-
+  const cameraLocation = useMemo(() => {
+    if (!activeCamera) return null;
+    const { cam_lat, cam_lon } = activeCamera;
+    if (!Number.isFinite(cam_lat) || !Number.isFinite(cam_lon)) return null;
+    let cameraMgrs = null;
     try {
-      const value = mgrs.forward([lng, lat], 5);
-      return {
-        zone: value.slice(0, 3),
-        grid: value.slice(3, 5),
-        coord: value.slice(5),
-      };
+      cameraMgrs = mgrs.forward([cam_lon, cam_lat], 5);
     } catch (error) {
-      return { zone: "", grid: "", coord: "" };
+      cameraMgrs = null;
+    }
+    return { lat: cam_lat, lon: cam_lon, mgrs: cameraMgrs };
+  }, [activeCamera]);
+
+  const primaryFocusPosition = useMemo(() => {
+    if (intruders.length > 0) {
+      return intruders[0].position;
+    }
+    if (cameraLocation) {
+      return { lat: cameraLocation.lat, lng: cameraLocation.lon };
+    }
+    return BASE_POSITION;
+  }, [intruders, cameraLocation]);
+
+  const subtitleText = useMemo(() => {
+    if (cameraLocation) {
+      const parts = [
+        `Camera ${selectedCameraId || activeCamera?.cam_id || ""}`.trim(),
+        `Lat ${cameraLocation.lat.toFixed(5)}`,
+        `Lon ${cameraLocation.lon.toFixed(5)}`,
+        cameraLocation.mgrs ? `MGRS ${cameraLocation.mgrs}` : "MGRS N/A",
+      ];
+      return parts.filter(Boolean).join(" • ");
+    }
+    return "Camera location: Unknown";
+  }, [cameraLocation, selectedCameraId, activeCamera]);
+
+  const handleMapClick = useCallback((event) => {
+    const coords = { lat: event.latlng.lat, lng: event.latlng.lng };
+    setLastClicked(coords);
+    try {
+      setLastClickedMgrs(mgrs.forward([coords.lng, coords.lat], 5));
+    } catch (error) {
+      setLastClickedMgrs(null);
     }
   }, []);
 
-  const setTargetFromLatLng = useCallback((latValue, lngValue) => {
-    setTargetInput((prev) => {
-      const latNumber = Number(latValue);
-      const lngNumber = Number(lngValue);
-      const isLatValid = Number.isFinite(latNumber);
-      const isLngValid = Number.isFinite(lngNumber);
-
-      const latString = isLatValid ? latNumber.toFixed(5) : "";
-      const lngString = isLngValid ? lngNumber.toFixed(5) : "";
-      const mgrsFields = isLatValid && isLngValid
-        ? deriveMgrsFields(latNumber, lngNumber)
-        : { zone: "", grid: "", coord: "" };
-
-      return {
-        ...prev,
-        lat: latString,
-        lng: lngString,
-        mgrsZone: mgrsFields.zone,
-        mgrsGrid: mgrsFields.grid,
-        mgrsCoord: mgrsFields.coord,
-      };
-    });
-  }, [deriveMgrsFields]);
-
-  // ตั้งค่าพื้นฐานของแผนที่ Leaflet ครั้งแรก
   useEffect(() => {
-    if (mapRef.current || !mapContainerRef.current) return;
+    if (!mapContainerRef.current || mapRef.current) return;
 
     const map = L.map(mapContainerRef.current, {
       center: [BASE_POSITION.lat, BASE_POSITION.lng],
       zoom: 13,
-      minZoom: 7,
-      maxZoom: 18,
+      minZoom: 6,
+      maxZoom: 19,
       zoomControl: false,
       attributionControl: false,
     });
@@ -491,808 +209,267 @@ export default function DefenseDashboard() {
       maxZoom: 19,
     }).addTo(map);
 
-    const baseMarker = L.marker(basePositionRef.current, { draggable: true }).addTo(map);
-    baseMarkerRef.current = baseMarker;
-    baseMarker.bindTooltip("Main Base", { permanent: true, direction: "top", offset: [0, -12] });
-
-    const baseCircle = L.circle(basePositionRef.current, {
-      radius: baseDetectionRadius,
-      color: "#facc15",
-      fillColor: "#facc15",
-      fillOpacity: 0.08,
-      weight: 1.5,
-      dashArray: "8 6",
-    }).addTo(map);
-    baseDetectionCircleRef.current = baseCircle;
-
-    const handleBaseDragEnd = (event) => {
-      const { lat, lng } = event.target.getLatLng();
-      const confirmed = window.confirm("Confirm moving the main base?");
-      if (!confirmed) {
-        baseMarker.setLatLng(basePositionRef.current);
-        return;
-      }
-      setBasePosition({ lat, lng });
-    };
-
-    baseMarker.on("dragend", handleBaseDragEnd);
-
-    const droneIcon = L.divIcon({
-      className: "drone-icon",
-      html: '<div class="drone-icon-wrapper"><div class="drone-icon-body"></div><div class="drone-icon-tail"></div></div>',
-      iconSize: [40, 40],
-      iconAnchor: [20, 20],
-    });
-
-    const marker = L.marker(BASE_POSITION, { icon: droneIcon }).addTo(map);
-    droneMarkerRef.current = marker;
-
-    const circle = L.circle(BASE_POSITION, {
-      radius: detectionRadius,
-      color: "#38bdf8",
-      fillColor: "#38bdf8",
-      fillOpacity: 0.12,
-      weight: 1,
-    }).addTo(map);
-    detectionCircleRef.current = circle;
-
-    gridLayerRef.current = L.layerGroup().addTo(map);
     intruderLayerRef.current = L.layerGroup().addTo(map);
-
-    initialIntrudersRef.current.forEach((intruder) => {
-      const intruderMarker = L.circleMarker(intruder.position, {
-        radius: 6,
-        color: "#f97316",
-        weight: 2,
-        fillOpacity: 0.85,
-      })
-        .bindTooltip(intruder.name, { direction: "top", offset: [0, -6] })
-        .addTo(intruderLayerRef.current);
-      intruderMarkersRef.current.set(intruder.id, intruderMarker);
-    });
-
-    const compassControl = L.control({ position: "topright" });
-
-    // ฟังก์ชันจัดการคลิกบนแผนที่เพื่อบันทึกพิกัดล่าสุด
-    const handleMapClick = (event) => {
-      const clickedPosition = { lat: event.latlng.lat, lng: event.latlng.lng };
-      setLastClicked(clickedPosition);
-      setTargetFromLatLng(clickedPosition.lat, clickedPosition.lng);
-    };
-
-    compassControl.onAdd = function onAdd() {
-      const div = L.DomUtil.create("div", "compass-control");
-      div.innerHTML =
-        '<div class="compass"><span class="north">N</span><span class="east">E</span><span class="south">S</span><span class="west">W</span></div>';
-      return div;
-    };
-    compassControl.addTo(map);
-
-    L.control.scale({ position: "bottomleft" }).addTo(map);
-
-    // ฟังก์ชันวาดกริด MGRS บนแผนที่ตามมุมมองปัจจุบัน
-    const updateGrid = () => {
-      if (!gridLayerRef.current) return;
-      gridLayerRef.current.clearLayers();
-
-      const bounds = map.getBounds();
-      const zoom = map.getZoom();
-      const stepMeters = chooseGridStep(zoom);
-      const gridAccuracy = mgrsAccuracyForStep(stepMeters);
-      const centerLatRad = toRadians(map.getCenter().lat);
-      const latStep = stepMeters / 111320;
-      const cosLat = Math.max(Math.cos(centerLatRad), 0.2);
-      const lngStep = stepMeters / (111320 * cosLat);
-
-      const south = Math.floor(bounds.getSouth() / latStep) * latStep;
-      const north = Math.ceil(bounds.getNorth() / latStep) * latStep;
-      const west = Math.floor(bounds.getWest() / lngStep) * lngStep;
-      const east = Math.ceil(bounds.getEast() / lngStep) * lngStep;
-
-      for (let lat = south; lat <= north; lat += latStep) {
-        const line = L.polyline(
-          [
-            [lat, bounds.getWest()],
-            [lat, bounds.getEast()],
-          ],
-          {
-            color: "rgba(148, 163, 184, 0.4)",
-            weight: 1,
-            interactive: false,
-          },
-        );
-        gridLayerRef.current.addLayer(line);
-
-        const label = mgrs.forward([bounds.getWest(), lat], gridAccuracy);
-        const labelMarker = L.marker([lat, bounds.getWest()], {
-          icon: L.divIcon({
-            className: "grid-label grid-label-lat",
-            html: label,
-            iconSize: [0, 0],
-          }),
-          interactive: false,
-        });
-        gridLayerRef.current.addLayer(labelMarker);
-      }
-
-      for (let lng = west; lng <= east; lng += lngStep) {
-        const line = L.polyline(
-          [
-            [bounds.getSouth(), lng],
-            [bounds.getNorth(), lng],
-          ],
-          {
-            color: "rgba(148, 163, 184, 0.4)",
-            weight: 1,
-            interactive: false,
-          },
-        );
-        gridLayerRef.current.addLayer(line);
-
-        const label = mgrs.forward([lng, bounds.getNorth()], gridAccuracy);
-        const labelMarker = L.marker([bounds.getNorth(), lng], {
-          icon: L.divIcon({
-            className: "grid-label grid-label-lng",
-            html: label,
-            iconSize: [0, 0],
-          }),
-          interactive: false,
-        });
-        gridLayerRef.current.addLayer(labelMarker);
-      }
-    };
-
-    map.on("moveend", updateGrid);
-    map.on("zoomend", updateGrid);
     map.on("click", handleMapClick);
-    updateGrid();
-
     mapRef.current = map;
-    setIsMapReady(true);
 
     return () => {
-      map.off("moveend", updateGrid);
-      map.off("zoomend", updateGrid);
       map.off("click", handleMapClick);
-      baseMarker.off("dragend", handleBaseDragEnd);
-      baseMarkerRef.current = null;
-      setIsMapReady(false);
       map.remove();
       mapRef.current = null;
+      intruderLayerRef.current = null;
+      intruderMarkersRef.current.clear();
     };
-  }, [setTargetFromLatLng]);
+  }, [handleMapClick]);
 
-  // ซิงก์ตำแหน่งและหัวโดรนกับ marker ในแผนที่
+  const handleFocusPrimary = useCallback(() => {
+    if (!mapRef.current || !primaryFocusPosition) return;
+    const currentZoom = mapRef.current.getZoom();
+    mapRef.current.flyTo([primaryFocusPosition.lat, primaryFocusPosition.lng], Math.max(currentZoom, 14), {
+      duration: 0.8,
+    });
+  }, [primaryFocusPosition]);
+
+  const handleCameraSubmit = useCallback((event) => {
+    event.preventDefault();
+    const trimmedId = cameraIdInput.trim();
+    setSelectedCameraId(trimmedId);
+    setCameraToken(tokenInput.trim());
+  }, [cameraIdInput, tokenInput]);
+
   useEffect(() => {
-    if (!droneMarkerRef.current) return;
-    droneMarkerRef.current.setLatLng(drone.position);
-    const wrapper = droneMarkerRef.current
-      .getElement()
-      ?.querySelector(".drone-icon-wrapper");
-    if (wrapper) {
-      wrapper.style.transform = `rotate(${drone.heading}deg)`;
+    if (!selectedCameraId && cameraInfo.length > 0) {
+      const defaultId = cameraInfo[0]?.cam_id ?? "";
+      setSelectedCameraId(defaultId);
+      if (!cameraIdInput) {
+        setCameraIdInput(defaultId);
+      }
     }
-  }, [drone.position, drone.heading]);
+  }, [cameraInfo, selectedCameraId, cameraIdInput]);
 
-  // ปรับรัศมีตรวจจับให้ตรงกับค่าที่ตั้ง
   useEffect(() => {
-    if (detectionCircleRef.current) {
-      detectionCircleRef.current.setLatLng(drone.position);
-      detectionCircleRef.current.setRadius(detectionRadius);
-    }
-  }, [drone.position, detectionRadius]);
+    if (!mapRef.current || !intruderLayerRef.current) return;
 
-  // ปรับสีและข้อความของเครื่องหมายโดรนไม่ทราบฝ่ายเมื่อสแกน และอัปเดตตำแหน่ง
-  useEffect(() => {
-    if (!intruderLayerRef.current || !mapRef.current) return;
+    const activeIds = new Set();
 
-    const liveIds = new Set();
-    
     intruders.forEach((intruder) => {
-      // Validate position
-      if (!intruder.position || 
-          typeof intruder.position.lat !== 'number' || 
-          typeof intruder.position.lng !== 'number' ||
-          isNaN(intruder.position.lat) ||
-          isNaN(intruder.position.lng)) {
-        console.warn(`[DefenseDashboard] Invalid position for intruder ${intruder.id}:`, intruder.position);
+      if (!intruder.position || !Number.isFinite(intruder.position.lat) || !Number.isFinite(intruder.position.lng)) {
         return;
       }
 
-      liveIds.add(intruder.id);
-      let marker = intruderMarkersRef.current.get(intruder.id);
-      
-      if (!marker) {
-        // Create new marker for new intruder
-        console.log(`[DefenseDashboard] Creating new marker for intruder ${intruder.id}`);
-        marker = L.circleMarker(intruder.position, {
-          radius: 6,
-          color: "#f97316",
-          weight: 2,
-          fillOpacity: 0.85,
-        })
-          .bindTooltip(intruder.name, { direction: "top", offset: [0, -6] })
-          .addTo(intruderLayerRef.current);
+      activeIds.add(intruder.id);
+      const existing = intruderMarkersRef.current.get(intruder.id);
+
+      if (!existing) {
+        const marker = L.marker(intruder.position, {
+          icon: createIntruderIcon(intruder),
+          bubblingMouseEvents: false,
+        }).addTo(intruderLayerRef.current);
+
+        marker.bindPopup(renderDronePopupContent(intruder), {
+          closeButton: false,
+          autoPan: false,
+          className: "drone-popup",
+        });
+
+        marker.on("mouseover", () => {
+          marker.openPopup();
+        });
+        marker.on("mouseout", () => {
+          marker.closePopup();
+        });
+
         intruderMarkersRef.current.set(intruder.id, marker);
-      }
-      
-      // Always update position (even if it's the same, to ensure accuracy)
-      marker.setLatLng(intruder.position);
-      
-      // Update style based on detection status
-      marker.setStyle({
-        color: intruder.isInside ? "#ef4444" : "#f97316",
-        fillColor: intruder.isInside ? "#ef4444" : "#fb923c",
-      });
-      
-      // Update tooltip with distance if available
-      if (intruder.distance != null) {
-        marker.setTooltipContent(
-          `${intruder.name} • ${formatDistance(intruder.distance)}`,
-        );
       } else {
-        marker.setTooltipContent(intruder.name);
+        existing.setLatLng(intruder.position);
+        existing.setIcon(createIntruderIcon(intruder));
+        const popup = existing.getPopup();
+        if (popup) {
+          popup.setContent(renderDronePopupContent(intruder));
+        }
       }
     });
 
-    // Remove markers that are no longer in the intruders list
     intruderMarkersRef.current.forEach((marker, id) => {
-      if (!liveIds.has(id)) {
-        console.log(`[DefenseDashboard] Removing marker for intruder ${id}`);
+      if (!activeIds.has(id)) {
+        marker.off("mouseover");
+        marker.off("mouseout");
         intruderLayerRef.current.removeLayer(marker);
         intruderMarkersRef.current.delete(id);
       }
     });
   }, [intruders]);
 
-  // จัดการ animation การเคลื่อนที่แบบจำลองของโดรน
   useEffect(() => {
-    if (!mapRef.current || !targetPosition) return;
+    setSocketStatus("connecting");
+    const socket = io(SOCKET_URL, {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+    });
 
-    setIsNavigating(true);
-
-    const startPosition = latestDroneRef.current?.position || BASE_POSITION;
-    const currentSpeed = Math.max(latestDroneRef.current?.speed || drone.speed, 5);
-    const duration = Math.max(
-      2000,
-      (haversineDistance(startPosition, targetPosition) / (currentSpeed * 0.277)) * 1000,
-    );
-    const startTime = performance.now();
-
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current);
-    }
-
-    const animate = (now) => {
-      const progress = Math.min((now - startTime) / duration, 1);
-      const lat =
-        startPosition.lat + (targetPosition.lat - startPosition.lat) * progress;
-      const lng =
-        startPosition.lng + (targetPosition.lng - startPosition.lng) * progress;
-
-      setDrone((prev) => ({
-        ...prev,
-        position: { lat, lng },
-      }));
-
-      if (progress < 1) {
-        animationRef.current = requestAnimationFrame(animate);
-      } else {
-        routeManagerRef.current?.clearRoute();
-        setTargetPosition(null);
-        setIsNavigating(false);
-        animationRef.current = null;
+    const handleDroneData = (payload) => {
+      const nextCameraInfo = Array.isArray(payload?.cam_info) ? payload.cam_info : null;
+      if (nextCameraInfo) {
+        setCameraInfo(nextCameraInfo);
       }
+
+      let dataArray = null;
+      if (Array.isArray(payload)) {
+        dataArray = payload;
+      } else if (payload && typeof payload === "object") {
+        if (Array.isArray(payload.object)) {
+          dataArray = payload.object;
+        } else if (Array.isArray(payload.objects)) {
+          dataArray = payload.objects;
+        } else if (Array.isArray(payload.drones)) {
+          dataArray = payload.drones;
+        }
+      }
+
+      if (!Array.isArray(dataArray) || dataArray.length === 0) {
+        return;
+      }
+
+      setIntruders((previous) => buildLiveIntruders(dataArray, previous));
     };
 
-    animationRef.current = requestAnimationFrame(animate);
+    socket.on("connect", () => {
+      setSocketStatus("connected");
+    });
+
+    socket.on("disconnect", () => {
+      setSocketStatus("disconnected");
+    });
+
+    socket.on("connect_error", () => {
+      setSocketStatus("disconnected");
+    });
+
+    socket.on("drone_update", handleDroneData);
+    socket.on("drones", handleDroneData);
+    socket.on("drone-data", handleDroneData);
+    socket.on("data", handleDroneData);
+    socket.on("message", handleDroneData);
 
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-        animationRef.current = null;
-      }
+      socket.off("drone_update", handleDroneData);
+      socket.off("drones", handleDroneData);
+      socket.off("drone-data", handleDroneData);
+      socket.off("data", handleDroneData);
+      socket.off("message", handleDroneData);
+      socket.disconnect();
     };
-  }, [targetPosition, drone.speed, routeManagerRef]);
-
-  const droneMgrs = useMemo(
-    () => mgrs.forward([drone.position.lng, drone.position.lat], 5),
-    [drone.position],
-  );
-
-  const lastClickedMgrs = useMemo(
-    () => (lastClicked ? mgrs.forward([lastClicked.lng, lastClicked.lat], 5) : null),
-    [lastClicked],
-  );
-
-  useEffect(() => {
-    if (baseDetectionCircleRef.current) {
-      baseDetectionCircleRef.current.setLatLng(basePosition);
-      baseDetectionCircleRef.current.setRadius(baseDetectionRadius);
-    }
-  }, [basePosition, baseDetectionRadius]);
-
-  const distanceFromBase = useMemo(
-    () => haversineDistance(basePosition, drone.position),
-    [basePosition, drone.position],
-  );
-
-  // จัดการการเปลี่ยนค่าของฟอร์มเป้าหมายใหม่
-  const handleTargetChange = useCallback((field, value) => {
-    if (field === "lat" || field === "lng") {
-      setTargetInput((prev) => {
-        const next = { ...prev, [field]: value };
-        const latNumber = Number.parseFloat(next.lat);
-        const lngNumber = Number.parseFloat(next.lng);
-        const { zone, grid, coord } = deriveMgrsFields(latNumber, lngNumber);
-        return {
-          ...next,
-          mgrsZone: zone,
-          mgrsGrid: grid,
-          mgrsCoord: coord,
-        };
-      });
-      return;
-    }
-
-    setTargetInput((prev) => ({ ...prev, [field]: value }));
-  }, [deriveMgrsFields]);
-
-  // ส่งคำสั่งให้โดรนไปยังพิกัดใหม่
-  const handleCommand = useCallback(async (event) => {
-    event.preventDefault();
-
-    let lat = Number.parseFloat(targetInput.lat);
-    let lng = Number.parseFloat(targetInput.lng);
-
-    const zonePart = targetInput.mgrsZone.trim().toUpperCase();
-    const gridPart = targetInput.mgrsGrid.trim().toUpperCase();
-    const coordPart = targetInput.mgrsCoord.trim().replace(/\s+/g, "");
-
-    const hasMgrsInput = zonePart !== "" || gridPart !== "" || coordPart !== "";
-
-    if (hasMgrsInput) {
-      if (!zonePart || !gridPart || !coordPart) {
-        window.alert("Please complete all MGRS fields (zone, grid, coordinate) before sending the command.");
-        return;
-      }
-
-      if (!/^\d{1,2}[C-HJ-NP-X]$/.test(zonePart)) {
-        window.alert("The MGRS zone should be 1-2 digits followed by a zone letter (e.g., 48Q).");
-        return;
-      }
-
-      if (!/^[A-Z]{2}$/.test(gridPart)) {
-        window.alert("The MGRS 100km grid should be two letters (e.g., WD).");
-        return;
-      }
-
-      if (!/^\d{2,10}$/.test(coordPart) || coordPart.length % 2 !== 0) {
-        window.alert("The MGRS coordinate should be an even number of digits (2 to 10).");
-        return;
-      }
-
-      const mgrsString = `${zonePart}${gridPart}${coordPart}`;
-
-      try {
-        const [convertedLng, convertedLat] = mgrs.toPoint(mgrsString);
-        if (!Number.isFinite(convertedLat) || !Number.isFinite(convertedLng)) {
-          throw new Error("Invalid MGRS conversion");
-        }
-        lat = convertedLat;
-        lng = convertedLng;
-      } catch (error) {
-        window.alert("Unable to convert the MGRS value to coordinates. Please double-check the input.");
-        return;
-      }
-    }
-
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      window.alert("Please enter valid coordinates before sending the command.");
-      return;
-    }
-
-    const nextLatLng = { lat, lng };
-
-    const startForRoute = latestDroneRef.current?.position ?? BASE_POSITION;
-    routeManagerRef.current?.drawRoute(startForRoute, nextLatLng);
-
-    setDrone((prev) => ({
-      ...prev,
-      heading: bearingBetween(prev.position, nextLatLng),
-    }));
-    setTargetPosition(nextLatLng);
-
-    try {
-      await fetch("/api/drone", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target: nextLatLng }),
-      });
-    } catch (error) {
-      // หากบันทึกไป backend ล้มเหลว ให้เงียบไว้เพื่อไม่ให้รบกวนการใช้งาน
-    }
-
-    setTargetFromLatLng(lat, lng);
-  }, [targetInput, routeManagerRef, setTargetFromLatLng]);
-
-  const handleClearTarget = useCallback(() => {
-    setTargetInput({
-      lat: "",
-      lng: "",
-      mgrsZone: "",
-      mgrsGrid: "",
-      mgrsCoord: "",
-    });
-    setTargetPosition(null);
-    setLastClicked(null);
-    routeManagerRef.current?.clearRoute();
-  }, [routeManagerRef]);
-
-  // คำนวณการสแกนภัยคุกคามรอบพื้นที่
-  const performScan = useCallback((options = {}) => {
-    const {
-      dronePosition,
-      detectionRadius: currentDetectionRadius,
-      basePosition: currentBasePosition,
-      baseDetectionRadius: currentBaseDetectionRadius,
-      baseMgrs: currentBaseMgrs,
-      isBaseScanEnabled,
-    } = scanContextRef.current;
-
-    const includeDrone = options.includeDrone ?? true;
-    const includeBase = options.includeBase ?? isBaseScanEnabled;
-    const newlyEnteredBase = [];
-    const detectionSummary = { drone: [], base: [] };
-
-    setIntruders((prev) => {
-      const nextBaseSet = includeBase ? new Set() : baseIntrudersRef.current;
-
-      const updated = prev.map((intruder) => {
-        const next = { ...intruder };
-        const distanceToDrone = haversineDistance(dronePosition, intruder.position);
-        const isWithinDroneRadius = includeDrone && distanceToDrone <= currentDetectionRadius;
-        let detectedByBase = false;
-
-        next.distance = distanceToDrone;
-
-        if ((includeDrone || includeBase) && !next.mgrs) {
-          try {
-            next.mgrs = mgrs.forward([intruder.position.lng, intruder.position.lat], 5);
-          } catch (error) {
-            next.mgrs = null;
-          }
-        }
-
-        if (isWithinDroneRadius) {
-          detectionSummary.drone.push({ id: intruder.id, name: intruder.name });
-        }
-
-        if (includeBase) {
-          const distanceToBase = haversineDistance(currentBasePosition, intruder.position);
-          const isNearBase = distanceToBase <= currentBaseDetectionRadius;
-
-          next.distanceToBase = distanceToBase;
-          next.isNearBase = isNearBase;
-
-          if (isNearBase) {
-            detectedByBase = true;
-            detectionSummary.base.push({ id: intruder.id, name: intruder.name });
-            nextBaseSet.add(intruder.id);
-            if (!baseIntrudersRef.current.has(intruder.id)) {
-              newlyEnteredBase.push({
-                id: intruder.id,
-                name: intruder.name,
-                position: intruder.position,
-                mgrs: next.mgrs,
-                distanceToDrone,
-                distanceToBase,
-                detectedBy: buildDetectionSources({ drone: isWithinDroneRadius, base: true }),
-              });
-            }
-          }
-        } else {
-          next.isNearBase = false;
-          next.distanceToBase = null;
-        }
-
-        next.isInside = isWithinDroneRadius || detectedByBase;
-        next.detectedBy = buildDetectionSources({
-          drone: isWithinDroneRadius,
-          base: detectedByBase,
-        });
-
-        return next;
-      });
-
-      if (includeBase) {
-        baseIntrudersRef.current = nextBaseSet;
-      }
-
-      return updated;
-    });
-
-    if (includeBase && newlyEnteredBase.length > 0) {
-      const timestamp = new Date().toLocaleTimeString();
-      setAlertLog((prev) => [
-        {
-          timestamp,
-          source: "base",
-          drone: {
-            position: currentBasePosition,
-            mgrs: currentBaseMgrs,
-            label: "Base",
-          },
-          detected: newlyEnteredBase,
-        },
-        ...prev.slice(0, 4),
-      ]);
-      window.alert("Base alert: hostile drones detected within the base perimeter.");
-    }
-
-    return detectionSummary;
   }, []);
 
-  const handleScanIntruders = useCallback(() => {
-    const summary = performScan({ includeDrone: true });
-    const timestamp = new Date().toLocaleTimeString();
-
-    setScanTelemetry((prev) => {
-      if (scanMode === "auto") {
-        const hasDetection = detectionSummaryHasHit(summary);
-        const previousAuto = prev.auto ?? { isRealtime: false, lastDetectedAt: null };
-        return {
-          ...prev,
-          auto: {
-            isRealtime: hasDetection,
-            lastDetectedAt: hasDetection ? timestamp : previousAuto.lastDetectedAt,
-          },
-        };
-      }
-
-      if (detectionSummaryHasHit(summary)) {
-        return {
-          ...prev,
-          manual: {
-            lastDetectedAt: timestamp,
-          },
-        };
-      }
-
-      return prev;
-    });
-  }, [performScan, scanMode]);
-
-  const handleBaseScan = useCallback(() => {
-    performScan({ includeDrone: false, includeBase: true });
-  }, [performScan]);
-
-  useEffect(() => {
-    if (scanMode !== "auto") return;
-
-    const intervalId = setInterval(() => {
-      handleScanIntruders();
-    }, 1000);
-
-    handleScanIntruders();
-
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [scanMode, handleScanIntruders]);
-
-  useEffect(() => {
-    if (scanMode === "auto") return;
-
-    setScanTelemetry((prev) => {
-      if (!prev.auto?.isRealtime) return prev;
-      return {
-        ...prev,
-        auto: {
-          ...prev.auto,
-          isRealtime: false,
-        },
-      };
-    });
-  }, [scanMode]);
-
-  useEffect(() => {
-    if (!isBaseScanActive) {
-      baseIntrudersRef.current = new Set();
-      setIntruders((prev) =>
-        prev.map((intruder) => ({
-          ...intruder,
-          distanceToBase: null,
-          isNearBase: false,
-        })),
-      );
-      return;
-    }
-
-    handleBaseScan();
-  }, [isBaseScanActive, handleBaseScan]);
-
-  useEffect(() => {
-    if (!isBaseScanActive) return;
-
-    baseIntrudersRef.current = new Set();
-    handleBaseScan();
-  }, [basePosition, baseDetectionRadius, isBaseScanActive, handleBaseScan]);
-
-  useEffect(() => {
-    if (!isBaseScanActive) return;
-
-    const intervalId = setInterval(() => {
-      handleBaseScan();
-    }, 1000);
-
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [isBaseScanActive, handleBaseScan]);
-
-  // เก็บบันทึกการแจ้งเตือนโดรนไม่ทราบฝ่ายที่เข้ามาใกล้
-  const handleRaiseAlert = useCallback(async () => {
-    const detected = intruders.filter((intruder) => intruder.isInside);
-    if (detected.length === 0) {
-      window.alert("No hostile drones detected within the radius.");
-      return;
-    }
-
-    const timestamp = new Date().toLocaleTimeString();
-    const detailedDetected = detected.map((intruder) => {
-      let intruderMgrs = null;
-      try {
-        intruderMgrs = mgrs.forward([intruder.position.lng, intruder.position.lat], 5);
-      } catch (error) {
-        intruderMgrs = null;
-      }
-
-      const detectedSources = [...(intruder.detectedBy ?? [])];
-
-      return {
-        id: intruder.id,
-        name: intruder.name,
-        position: intruder.position,
-        mgrs: intruderMgrs,
-        distanceToDrone:
-          intruder.distance ?? haversineDistance(drone.position, intruder.position),
-        distanceToBase:
-          intruder.distanceToBase ?? haversineDistance(basePosition, intruder.position),
-        detectedBy: detectedSources,
-      };
-    });
-
-    const droneMgrsSnapshot = (() => {
-      try {
-        return mgrs.forward([drone.position.lng, drone.position.lat], 5);
-      } catch (error) {
-        return null;
-      }
-    })();
-
-    const entry = {
-      timestamp,
-      source: "drone",
-      drone: {
-        position: drone.position,
-        mgrs: droneMgrsSnapshot,
-        label: "Drone",
-      },
-      detected: detailedDetected,
-    };
-    setAlertLog((prev) => [entry, ...prev.slice(0, 4)]);
-
-    try {
-      await fetch("/api/drone", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ alert: entry }),
-      });
-    } catch (error) {
-      // Ignore failures when logging alerts to the mock API
-    }
-  }, [intruders, drone.position, basePosition]);
-
-  // หยุดการเคลื่อนที่ของโดรนตามคำร้องขอ
-  const handleStopRequest = useCallback(() => {
-    if (!isNavigating && !animationRef.current) {
-      window.alert("Autonomous navigation is not active.");
-      return;
-    }
-
-    const confirmStop = window.confirm(
-      "ยืนยันการหยุดโดรนไว้ ณ ตำแหน่งปัจจุบันหรือไม่?",
-    );
-
-    if (!confirmStop) {
-      window.alert("Continuing the current route.");
-      return;
-    }
-
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current);
-      animationRef.current = null;
-    }
-
-    routeManagerRef.current?.clearRoute();
-    setTargetPosition(null);
-    setIsNavigating(false);
-  }, [isNavigating, routeManagerRef]);
-
-  // โฟกัสแผนที่กลับมาที่โดรนทันที
-  const handleFocusOnDrone = useCallback(() => {
-    if (!mapRef.current) return;
-    mapRef.current.flyTo([drone.position.lat, drone.position.lng], Math.max(mapRef.current.getZoom(), 15), {
-      duration: 0.8,
-    });
-  }, [drone.position]);
-
   return (
-    <div className="dashboard">
-      <section className="map-section">
-        <DashboardHeader baseMgrs={baseMgrs} />
-        <MapInfoPanel
-          drone={drone}
-          droneMgrs={droneMgrs}
-          distanceFromBase={formatDistance(distanceFromBase)}
-          headingText={headingToText(drone.heading)}
-          lastClicked={lastClicked}
-          lastClickedMgrs={lastClickedMgrs}
-          onFillTarget={() => {
-            if (!lastClicked) return;
-            setTargetFromLatLng(lastClicked.lat, lastClicked.lng);
-          }}
-        />
-        <RouteLayerManager
-          ref={routeManagerRef}
-          mapRef={mapRef}
-          isMapReady={isMapReady}
-          dronePosition={drone.position}
-        />
-          <ActionToolbar
-            onFocus={handleFocusOnDrone}
-            onStop={handleStopRequest}
-            isNavigating={isNavigating}
-          />
-        <div ref={mapContainerRef} className="map-container" />
+    <div className="defense-dashboard-root">
+      <div ref={mapContainerRef} className="map-layer" />
+
+      <header className="toolbar-overlay">
+        <div className="toolbar-text">
+          <h1>Defense Dashboard</h1>
+          <p>{subtitleText}</p>
+        </div>
+        <div className="toolbar-controls">
+          <span className={`socket-status socket-${socketStatus}`}>{socketStatus}</span>
+          <button type="button" className="toolbar-button" onClick={handleFocusPrimary}>
+            Focus Drone
+          </button>
+          <button type="button" className="toolbar-button" onClick={() => console.log("History requested")}
+          >
+            History
+          </button>
+        </div>
+      </header>
+
+      <aside className="sidebar-overlay">
+        <h2>Drone Status</h2>
+        <div className="drone-list">
+          {intruders.length === 0 ? (
+            <div className="empty-state">Awaiting drone telemetry…</div>
+          ) : (
+            intruders.map((intruder) => {
+              const hasImage = Boolean(intruder.imgbase64);
+              return (
+                <article className="drone-card" key={intruder.id}>
+                  <div className="drone-card-media">
+                    {hasImage ? (
+                      <img src={intruder.imgbase64} alt={intruder.name} />
+                    ) : (
+                      <div className="drone-card-placeholder">No Image</div>
+                    )}
+                  </div>
+                  <div className="drone-card-body">
+                    <div className="drone-card-title">{intruder.name}</div>
+                    <div className="drone-card-meta">ID: {intruder.id}</div>
+                    <div className="drone-card-meta">Velocity: {formatVelocity(intruder.velocity)}</div>
+                    <div className="drone-card-meta">Direction: {formatDirection(intruder.direction)}</div>
+                    <div className="drone-card-meta">Camera: {intruder.camId || "Unknown"}</div>
+                    <div className="drone-card-meta">Last seen: {intruder.lastSeen}</div>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </div>
+      </aside>
+
+      <section className="camera-overlay">
+        <form className="camera-form" onSubmit={handleCameraSubmit}>
+          <h3>Camera Credentials</h3>
+          <label>
+            Camera ID
+            <input
+              type="text"
+              value={cameraIdInput}
+              onChange={(event) => setCameraIdInput(event.target.value)}
+              placeholder="cam001"
+            />
+          </label>
+          <label>
+            Token
+            <input
+              type="password"
+              value={tokenInput}
+              onChange={(event) => setTokenInput(event.target.value)}
+              placeholder="••••••"
+            />
+          </label>
+          <button type="submit" className="toolbar-button">
+            Save
+          </button>
+        </form>
+        <div className="camera-details">
+          {activeCamera ? (
+            <>
+              <div>Selected: {activeCamera.cam_id}</div>
+              <div>Battery: {Number.isFinite(activeCamera.cam_bat) ? `${activeCamera.cam_bat}%` : "Unknown"}</div>
+              <div>
+                Location: {cameraLocation ? `${cameraLocation.lat.toFixed(5)}, ${cameraLocation.lon.toFixed(5)}` : "Unknown"}
+              </div>
+              <div>MGRS: {cameraLocation?.mgrs ?? "N/A"}</div>
+              <div>Token: {cameraToken ? "••••••" : "Not set"}</div>
+            </>
+          ) : (
+            <div>No camera selected</div>
+          )}
+        </div>
       </section>
-      <section className="control-section">
-        <MissionControl
-          targetInput={targetInput}
-          onChange={handleTargetChange}
-          onSubmit={handleCommand}
-          onClear={handleClearTarget}
-        />
-        <FlightControlPanel
-          drone={drone}
-          onAltitudeChange={(value) =>
-            setDrone((prev) => ({ ...prev, altitude: Number(value) }))
-          }
-          onHeadingChange={(value) =>
-            setDrone((prev) => ({ ...prev, heading: Number(value) }))
-          }
-          onSpeedChange={(value) =>
-            setDrone((prev) => ({ ...prev, speed: Number(value) }))
-          }
-          detectionRadius={detectionRadius}
-          onRadiusChange={(value) => setDetectionRadius(Number(value))}
-          baseDetectionRadius={baseDetectionRadius}
-          onBaseRadiusChange={(value) => setBaseDetectionRadius(Number(value))}
-        />
-        <ThreatPanel
-          intruders={intruders}
-          scanMode={scanMode}
-          onScanModeChange={setScanMode}
-          onScan={handleScanIntruders}
-          isBaseScanActive={isBaseScanActive}
-          onToggleBaseScan={() => setIsBaseScanActive((prev) => !prev)}
-          onAlert={handleRaiseAlert}
-          formatDistance={formatDistance}
-          scanTelemetry={scanTelemetry}
-        />
-        <AlertLogPanel alertLog={alertLog} formatDistance={formatDistance} />
-      </section>
+
+      <div className="coords-overlay">
+        <h3>Map Coordinates</h3>
+        {lastClicked ? (
+          <ul>
+            <li>Lat: {lastClicked.lat.toFixed(5)}</li>
+            <li>Lon: {lastClicked.lng.toFixed(5)}</li>
+            <li>MGRS: {lastClickedMgrs ?? "N/A"}</li>
+          </ul>
+        ) : (
+          <p>Click anywhere on the map to capture coordinates.</p>
+        )}
+      </div>
     </div>
   );
 }

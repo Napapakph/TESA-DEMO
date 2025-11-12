@@ -105,7 +105,13 @@ export default function ThreatPanel({
           >
             <div className="intruder-name">{intruder.name}</div>
             <div className="intruder-meta">
-              Lat {intruder.position.lat.toFixed(4)} | Lng {intruder.position.lng.toFixed(4)}
+              {intruder.position && 
+               typeof intruder.position.lat === 'number' && 
+               typeof intruder.position.lng === 'number' ? (
+                <>Lat {intruder.position.lat.toFixed(4)} | Lng {intruder.position.lng.toFixed(4)}</>
+              ) : (
+                "Position: N/A"
+              )}
             </div>
             <div className="intruder-meta">
               {intruder.distance != null ? formatDistance(intruder.distance) : "Awaiting scan"}

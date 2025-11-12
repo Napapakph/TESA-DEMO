@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { io } from "socket.io-client";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import mgrs from "mgrs";
@@ -30,7 +31,7 @@ L.Icon.Default.mergeOptions({
 const BASE_POSITION = { lat: 14.2059, lng: 101.2134 };
 const EARTH_RADIUS_METERS = 6371000;
 
-const LIVE_WEBSOCKET_PATH = "http://10.110.54.44:3000/";
+const SOCKET_URL = "http://192.168.1.104:3000";
 
 const LIVE_INTRUDER_SAMPLE = [
   {
@@ -79,38 +80,88 @@ const LIVE_INTRUDER_SAMPLE = [
   },
 ];
 
-function toWebSocketUrl(path) {
-  if (path.startsWith("ws://") || path.startsWith("wss://")) {
-    return path;
-  }
-  return path.replace(/^https?:/, (match) => (match === "https:" ? "wss:" : "ws:"));
-}
-
 function createLiveIntruderEntry(entry, previous) {
   const prev = previous ?? {};
+  
+  // Validate and ensure position exists
+  // Support both 'lat'/'lng' and 'lat'/'lon' formats
+  const lat = typeof entry.lat === 'number' && !isNaN(entry.lat) ? entry.lat : null;
+  const lng = typeof entry.lon === 'number' && !isNaN(entry.lon) 
+    ? entry.lon 
+    : (typeof entry.lng === 'number' && !isNaN(entry.lng) ? entry.lng : null);
+  
+  // Use previous position if current is invalid
+  const position = (lat !== null && lng !== null) 
+    ? { lat, lng }
+    : (prev.position && typeof prev.position.lat === 'number' && typeof prev.position.lng === 'number')
+      ? prev.position
+      : { lat: 0, lng: 0 }; // Fallback to default position
+  
+  // Support both 'id' and 'droneId' for drone identification
+  const droneId = entry.id ?? entry.droneId ?? 'unknown';
+  
+  // Convert timestamp if it's a Unix timestamp (number) or ISO string
+  let lastSeen = entry.time;
+  if (typeof entry.time === 'number') {
+    // Unix timestamp in seconds, convert to ISO string
+    lastSeen = new Date(entry.time * 1000).toISOString();
+  } else if (typeof entry.time === 'string') {
+    lastSeen = entry.time;
+  } else {
+    lastSeen = prev.lastSeen ?? new Date().toISOString();
+  }
+  
   return {
-    id: String(entry.droneId),
-    name: entry.type ?? `Drone ${entry.droneId}`,
-    position: { lat: entry.lat, lng: entry.lng },
-    velocity: entry.velocity,
-    direction: entry.direction,
-    lastSeen: entry.time,
-    camId: entry.cam_id,
-    isDrone: entry.isDrone ?? true,
+    id: String(droneId),
+    name: entry.type ?? `Drone ${droneId}`,
+    position,
+    velocity: typeof entry.velocity === 'number' ? entry.velocity : (prev.velocity ?? 0),
+    direction: typeof entry.direction === 'number' ? entry.direction : (prev.direction ?? 0),
+    lastSeen,
+    camId: entry.cam_id ?? entry.camId ?? prev.camId ?? '',
+    isDrone: entry.isDrone ?? prev.isDrone ?? true,
     distance: prev.distance ?? null,
     distanceToBase: prev.distanceToBase ?? null,
     isInside: prev.isInside ?? false,
     isNearBase: prev.isNearBase ?? false,
     mgrs: prev.mgrs ?? null,
     detectedBy: prev.detectedBy ? [...prev.detectedBy] : [],
+    frame: entry.frame ?? prev.frame ?? null,
+    imgbase64: entry.imgbase64 ?? prev.imgbase64 ?? null,
   };
 }
 
 function buildLiveIntruders(payload, previous = []) {
   const previousMap = new Map(previous.map((intruder) => [intruder.id, intruder]));
-  return payload.map((entry) =>
-    createLiveIntruderEntry(entry, previousMap.get(String(entry.droneId))),
-  );
+  
+  // Handle different payload structures
+  let dataArray = null;
+  
+  if (Array.isArray(payload)) {
+    // Direct array
+    dataArray = payload;
+  } else if (payload && typeof payload === 'object') {
+    // Object with 'object' property (new format)
+    if (Array.isArray(payload.object)) {
+      dataArray = payload.object;
+    } else if (Array.isArray(payload.objects)) {
+      dataArray = payload.objects;
+    } else if (Array.isArray(payload.drones)) {
+      dataArray = payload.drones;
+    } else {
+      // Single object, wrap in array
+      dataArray = [payload];
+    }
+  }
+  
+  if (!dataArray || dataArray.length === 0) {
+    return previous; // Return previous if no new data
+  }
+  
+  return dataArray.map((entry) => {
+    const entryId = String(entry.id ?? entry.droneId ?? 'unknown');
+    return createLiveIntruderEntry(entry, previousMap.get(entryId));
+  });
 }
 
 // ฟังก์ชันแปลงองศาให้เป็นเรเดียนสำหรับสูตรคำนวณ
@@ -290,40 +341,68 @@ export default function DefenseDashboard() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof window.WebSocket !== "function") {
-      return undefined;
-    }
+    console.log("[DefenseDashboard] Initializing Socket.IO connection to:", SOCKET_URL);
+    const socket = io(SOCKET_URL, {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+    });
 
-    let socket;
-    try {
-      socket = new WebSocket(toWebSocketUrl(LIVE_WEBSOCKET_PATH));
-    } catch (error) {
-      console.error("Unable to open live feed socket", error);
-      return undefined;
-    }
+    socket.on("connect", () => {
+      console.log("[DefenseDashboard] Socket.IO connected");
+    });
 
-    const handleMessage = (event) => {
-      let payload;
-      try {
-        payload = JSON.parse(event.data);
-      } catch {
-        return;
+    socket.on("disconnect", () => {
+      console.log("[DefenseDashboard] Socket.IO disconnected");
+    });
+
+    socket.on("connect_error", (error) => {
+      console.error("[DefenseDashboard] Socket.IO connection error:", error);
+    });
+
+    socket.on("reconnect", (attemptNumber) => {
+      console.log("[DefenseDashboard] Socket.IO reconnected after", attemptNumber, "attempts");
+    });
+
+    // Handle drone data from Socket.IO
+    // Expected format: { time, side, cam_info: [...], object: [...] }
+    const handleDroneData = (payload) => {
+      console.log("[DefenseDashboard] Received data from Socket.IO:", payload);
+      
+      // Handle the new payload structure with 'object' array
+      if (payload && typeof payload === 'object') {
+        // Extract 'object' array from payload
+        const objectArray = payload.object ?? payload.objects ?? payload.drones;
+        
+        if (Array.isArray(objectArray) && objectArray.length > 0) {
+          console.log(`[DefenseDashboard] Processing ${objectArray.length} drone objects`);
+          setIntruders((prev) => buildLiveIntruders(objectArray, prev));
+        } else if (Array.isArray(payload)) {
+          // Fallback: if payload is directly an array
+          console.log(`[DefenseDashboard] Processing payload as direct array (${payload.length} items)`);
+          setIntruders((prev) => buildLiveIntruders(payload, prev));
+        } else {
+          console.warn("[DefenseDashboard] No valid object array found in payload");
+        }
+      } else if (Array.isArray(payload)) {
+        // Direct array format (backward compatibility)
+        console.log(`[DefenseDashboard] Processing payload as direct array (${payload.length} items)`);
+        setIntruders((prev) => buildLiveIntruders(payload, prev));
+      } else {
+        console.warn("[DefenseDashboard] Invalid payload format:", payload);
       }
-
-      if (!Array.isArray(payload)) {
-        return;
-      }
-
-      setIntruders((prev) => buildLiveIntruders(payload, prev));
     };
 
-    socket.addEventListener("message", handleMessage);
+    // Listen for various Socket.IO event names
+    socket.on("drone_update", handleDroneData);
+    socket.on("drones", handleDroneData);
+    socket.on("drone-data", handleDroneData);
+    socket.on("data", handleDroneData);
+    socket.on("message", handleDroneData);
 
     return () => {
-      socket.removeEventListener("message", handleMessage);
-      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
-        socket.close();
-      }
+      socket.disconnect();
     };
   }, []);
 
@@ -603,20 +682,65 @@ export default function DefenseDashboard() {
     }
   }, [drone.position, detectionRadius]);
 
-  // ปรับสีและข้อความของเครื่องหมายโดรนไม่ทราบฝ่ายเมื่อสแกน
+  // ปรับสีและข้อความของเครื่องหมายโดรนไม่ทราบฝ่ายเมื่อสแกน และอัปเดตตำแหน่ง
   useEffect(() => {
+    if (!intruderLayerRef.current || !mapRef.current) return;
+
+    const liveIds = new Set();
+    
     intruders.forEach((intruder) => {
-      const marker = intruderMarkersRef.current.get(intruder.id);
-      if (!marker) return;
+      // Validate position
+      if (!intruder.position || 
+          typeof intruder.position.lat !== 'number' || 
+          typeof intruder.position.lng !== 'number' ||
+          isNaN(intruder.position.lat) ||
+          isNaN(intruder.position.lng)) {
+        console.warn(`[DefenseDashboard] Invalid position for intruder ${intruder.id}:`, intruder.position);
+        return;
+      }
+
+      liveIds.add(intruder.id);
+      let marker = intruderMarkersRef.current.get(intruder.id);
+      
+      if (!marker) {
+        // Create new marker for new intruder
+        console.log(`[DefenseDashboard] Creating new marker for intruder ${intruder.id}`);
+        marker = L.circleMarker(intruder.position, {
+          radius: 6,
+          color: "#f97316",
+          weight: 2,
+          fillOpacity: 0.85,
+        })
+          .bindTooltip(intruder.name, { direction: "top", offset: [0, -6] })
+          .addTo(intruderLayerRef.current);
+        intruderMarkersRef.current.set(intruder.id, marker);
+      }
+      
+      // Always update position (even if it's the same, to ensure accuracy)
       marker.setLatLng(intruder.position);
+      
+      // Update style based on detection status
       marker.setStyle({
         color: intruder.isInside ? "#ef4444" : "#f97316",
         fillColor: intruder.isInside ? "#ef4444" : "#fb923c",
       });
+      
+      // Update tooltip with distance if available
       if (intruder.distance != null) {
         marker.setTooltipContent(
           `${intruder.name} • ${formatDistance(intruder.distance)}`,
         );
+      } else {
+        marker.setTooltipContent(intruder.name);
+      }
+    });
+
+    // Remove markers that are no longer in the intruders list
+    intruderMarkersRef.current.forEach((marker, id) => {
+      if (!liveIds.has(id)) {
+        console.log(`[DefenseDashboard] Removing marker for intruder ${id}`);
+        intruderLayerRef.current.removeLayer(marker);
+        intruderMarkersRef.current.delete(id);
       }
     });
   }, [intruders]);

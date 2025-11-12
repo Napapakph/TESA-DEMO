@@ -118,35 +118,39 @@
 
 .dashboard-body {
   display: flex;
-  gap: clamp(0px, 4vw, 5px);
+  /* gap: clamp(16px, 4vw, 28px); */
   flex: 1;
   min-height: 0;
   position: relative;
+  /* padding: clamp(16px, 4vw, 28px) clamp(20px, 4vw, 36px); */
 }
 
 .sidebar-panel {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 10;
-  width: clamp(280px, 22vw, 360px);
+  position: relative;
+  z-index: 3;
+  flex: 0 0 clamp(280px, 24vw, 360px);
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 18px;
   background: rgba(15, 23, 42, 0.65);
   border: 1px solid rgba(56, 189, 248, 0.32);
+  border-radius: 16px;
   backdrop-filter: blur(10px);
-  overflow: hidden;
-  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  max-height: calc(100vh - 160px);
+  min-height: 100vh;
 }
 
 .sidebar-panel.collapsed {
   width: clamp(60px, 8vw, 80px);
+  flex-basis: clamp(60px, 8vw, 80px);
+  overflow: hidden;
 }
 
 .sidebar-panel.collapsed .sidebar-header h2,
-.sidebar-panel.collapsed .drone-list {
+.sidebar-panel.collapsed .drone-list,
+.sidebar-panel.collapsed .detail-panel {
   display: none;
 }
 
@@ -191,11 +195,13 @@
 }
 
 .map-wrapper {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: clamp(440px, 60vh, 760px);
   border: 1px solid rgba(56, 189, 248, 0.25);
   background: rgba(15, 23, 42, 0.4);
+  border-radius: 18px;
+  overflow: hidden;
 }
 
 .mapboxgl-map {
@@ -205,8 +211,8 @@
 }
 
 .mapboxgl-canvas {
-  width: 100%;
-  height: 100%;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .map-status-message {
@@ -1355,38 +1361,16 @@
 }
 
 .detail-panel {
-  position: absolute;
-  bottom: clamp(16px, 4vw, 28px);
-  left: clamp(16px, 4vw, 28px);
+  margin-top: 18px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  max-width: calc(100vw - clamp(32px, 8vw, 56px));
-  z-index: 5;
-  animation: slideInFromBottom 0.3s ease;
-  pointer-events: none;
-  align-items: flex-end;
-}
-
-.detail-panel > * {
-  pointer-events: auto;
-}
-
-@keyframes slideInFromBottom {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  flex-direction: column;
+  gap: 16px;
+  align-items: stretch;
 }
 
 .detail-column {
-  width: clamp(350px, 35vw, 450px);
+  width: 100%;
   height: fit-content;
-  max-height: calc(100vh - 140px);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1895,12 +1879,11 @@
 @media (max-width: 1024px) {
   .detail-panel {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
   }
 
   .detail-column {
-    width: min(450px, calc(100vw - 32px));
-    
+    width: 100%;
   }
 }
 
@@ -1925,7 +1908,6 @@
   }
 
   .detail-panel {
-    position: static;
     flex-direction: column;
     max-width: 100%;
   }

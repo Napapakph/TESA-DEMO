@@ -1336,6 +1336,196 @@ export default function DefenseDashboard() {
               })
             )}
           </div>
+
+          {droneCards.length > 0 && (
+            <div className="detail-panel">
+              <div className={`detail-column${latestDroneExpanded ? "" : " collapsed"}`} id="latest-drone-detail">
+                <div className="detail-column-header">
+                  {latestDroneExpanded ? (
+                    <>
+                      <h3>Latest Drone</h3>
+                      <span className="detail-badge latest">New</span>
+                      <button
+                        type="button"
+                        className="detail-collapse-button"
+                        onClick={() => setLatestDroneExpanded(false)}
+                        title="Collapse"
+                      >
+                        ▼
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {droneCards[0] && droneCards[0].images.length > 0 && (
+                        <img
+                          className="collapsed-thumbnail"
+                          src={droneCards[0].images[0].src}
+                          alt="Latest drone"
+                        />
+                      )}
+                      <span className="collapsed-id">ID: {droneCards[0]?.id}</span>
+                      <button
+                        type="button"
+                        className="detail-expand-button"
+                        onClick={() => setLatestDroneExpanded(true)}
+                        title="Expand"
+                      >
+                        ▲
+                      </button>
+                    </>
+                  )}
+                </div>
+                <div className="detail-content">
+                  {droneCards[0] && (
+                    <>
+                      <div className="detail-info-row">
+                        <span className="detail-label">Name</span>
+                        <span className="detail-value">{droneCards[0].name}</span>
+                      </div>
+                      <div className="detail-info-row">
+                        <span className="detail-label">ID</span>
+                        <span className="detail-value">{droneCards[0].id}</span>
+                      </div>
+                      <div className="detail-info-row">
+                        <span className="detail-label">Camera</span>
+                        <span
+                          className="camera-badge"
+                          style={{ backgroundColor: droneCards[0].cameraColor }}
+                        >
+                          {droneCards[0].camId || "Unknown"}
+                        </span>
+                      </div>
+                      <div className="detail-info-row">
+                        <span className="detail-label">Latitude</span>
+                        <span className="detail-value">
+                          {droneCards[0].position && Number.isFinite(droneCards[0].position.lat)
+                            ? droneCards[0].position.lat.toFixed(6)
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="detail-info-row">
+                        <span className="detail-label">Longitude</span>
+                        <span className="detail-value">
+                          {droneCards[0].position && Number.isFinite(droneCards[0].position.lng)
+                            ? droneCards[0].position.lng.toFixed(6)
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="detail-info-row">
+                        <span className="detail-label">Velocity</span>
+                        <span className="detail-value">{formatVelocity(droneCards[0].velocity)}</span>
+                      </div>
+                      <div className="detail-info-row">
+                        <span className="detail-label">Direction</span>
+                        <span className="detail-value">{formatDirection(droneCards[0].direction)}</span>
+                      </div>
+                      <div className="detail-info-row">
+                        <span className="detail-label">Last Seen</span>
+                        <span className="detail-value">{formatTimestamp(droneCards[0].lastSeen)}</span>
+                      </div>
+                      {droneCards[0].images.length > 0 && (
+                        <div className="detail-image-gallery">
+                          <h4>Images ({droneCards[0].images.length})</h4>
+                          <div className="detail-image-grid">
+                            {droneCards[0].images.map((image, idx) => (
+                              <div
+                                className="detail-image-item"
+                                key={`latest-img-${idx}`}
+                                onClick={() => expandImage(image.src)}
+                              >
+                                <img src={image.src} alt={`Latest drone ${idx + 1}`} />
+                                <span className="detail-image-time">{formatTimestamp(image.capturedAt)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {selectedDroneForDetail && (
+                <div className="detail-column" id="selected-drone-detail">
+                  <div className="detail-column-header">
+                    <h3>Selected Drone</h3>
+                    <button
+                      type="button"
+                      className="detail-close-button"
+                      onClick={closeSelectedDetail}
+                      title="Close"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="detail-content">
+                    <div className="detail-info-row">
+                      <span className="detail-label">Name</span>
+                      <span className="detail-value">{selectedDroneForDetail.name}</span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">ID</span>
+                      <span className="detail-value">{selectedDroneForDetail.id}</span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">Camera</span>
+                      <span
+                        className="camera-badge"
+                        style={{ backgroundColor: selectedDroneForDetail.cameraColor }}
+                      >
+                        {selectedDroneForDetail.camId || "Unknown"}
+                      </span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">Latitude</span>
+                      <span className="detail-value">
+                        {selectedDroneForDetail.position && Number.isFinite(selectedDroneForDetail.position.lat)
+                          ? selectedDroneForDetail.position.lat.toFixed(6)
+                          : "—"}
+                      </span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">Longitude</span>
+                      <span className="detail-value">
+                        {selectedDroneForDetail.position && Number.isFinite(selectedDroneForDetail.position.lng)
+                          ? selectedDroneForDetail.position.lng.toFixed(6)
+                          : "—"}
+                      </span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">Velocity</span>
+                      <span className="detail-value">{formatVelocity(selectedDroneForDetail.velocity)}</span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">Direction</span>
+                      <span className="detail-value">{formatDirection(selectedDroneForDetail.direction)}</span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">Last Seen</span>
+                      <span className="detail-value">{formatTimestamp(selectedDroneForDetail.lastSeen)}</span>
+                    </div>
+                    {selectedDroneForDetail.images.length > 0 && (
+                      <div className="detail-image-gallery">
+                        <h4>Images ({selectedDroneForDetail.images.length})</h4>
+                        <div className="detail-image-grid">
+                          {selectedDroneForDetail.images.map((image, idx) => (
+                            <div
+                              className="detail-image-item"
+                              key={`selected-img-${idx}`}
+                              onClick={() => expandImage(image.src)}
+                            >
+                              <img src={image.src} alt={`Selected drone ${idx + 1}`} />
+                              <span className="detail-image-time">{formatTimestamp(image.capturedAt)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </aside>
 
         <main className="map-wrapper">
@@ -1352,196 +1542,6 @@ export default function DefenseDashboard() {
               <button type="button" onClick={reloadMapboxToken}>
                 ลองอีกครั้ง
               </button>
-            </div>
-          )}
-
-          {droneCards.length > 0 && (
-            <div className="detail-panel">
-            <div className={`detail-column${latestDroneExpanded ? "" : " collapsed"}`} id="latest-drone-detail">
-              <div className="detail-column-header">
-                {latestDroneExpanded ? (
-                  <>
-                    <h3>Latest Drone</h3>
-                    <span className="detail-badge latest">New</span>
-                    <button
-                      type="button"
-                      className="detail-collapse-button"
-                      onClick={() => setLatestDroneExpanded(false)}
-                      title="Collapse"
-                    >
-                      ▼
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {droneCards[0] && droneCards[0].images.length > 0 && (
-                      <img
-                        className="collapsed-thumbnail"
-                        src={droneCards[0].images[0].src}
-                        alt="Latest drone"
-                      />
-                    )}
-                    <span className="collapsed-id">ID: {droneCards[0]?.id}</span>
-                    <button
-                      type="button"
-                      className="detail-expand-button"
-                      onClick={() => setLatestDroneExpanded(true)}
-                      title="Expand"
-                    >
-                      ▲
-                    </button>
-                  </>
-                )}
-              </div>
-              <div className="detail-content">
-                {droneCards[0] && (
-                  <>
-                    <div className="detail-info-row">
-                      <span className="detail-label">Name</span>
-                      <span className="detail-value">{droneCards[0].name}</span>
-                    </div>
-                    <div className="detail-info-row">
-                      <span className="detail-label">ID</span>
-                      <span className="detail-value">{droneCards[0].id}</span>
-                    </div>
-                    <div className="detail-info-row">
-                      <span className="detail-label">Camera</span>
-                      <span
-                        className="camera-badge"
-                        style={{ backgroundColor: droneCards[0].cameraColor }}
-                      >
-                        {droneCards[0].camId || "Unknown"}
-                      </span>
-                    </div>
-                    <div className="detail-info-row">
-                      <span className="detail-label">Latitude</span>
-                      <span className="detail-value">
-                        {droneCards[0].position && Number.isFinite(droneCards[0].position.lat)
-                          ? droneCards[0].position.lat.toFixed(6)
-                          : "—"}
-                      </span>
-                    </div>
-                    <div className="detail-info-row">
-                      <span className="detail-label">Longitude</span>
-                      <span className="detail-value">
-                        {droneCards[0].position && Number.isFinite(droneCards[0].position.lng)
-                          ? droneCards[0].position.lng.toFixed(6)
-                          : "—"}
-                      </span>
-                    </div>
-                    <div className="detail-info-row">
-                      <span className="detail-label">Velocity</span>
-                      <span className="detail-value">{formatVelocity(droneCards[0].velocity)}</span>
-                    </div>
-                    <div className="detail-info-row">
-                      <span className="detail-label">Direction</span>
-                      <span className="detail-value">{formatDirection(droneCards[0].direction)}</span>
-                    </div>
-                    <div className="detail-info-row">
-                      <span className="detail-label">Last Seen</span>
-                      <span className="detail-value">{formatTimestamp(droneCards[0].lastSeen)}</span>
-                    </div>
-                    {droneCards[0].images.length > 0 && (
-                      <div className="detail-image-gallery">
-                        <h4>Images ({droneCards[0].images.length})</h4>
-                        <div className="detail-image-grid">
-                          {droneCards[0].images.map((image, idx) => (
-                            <div
-                              className="detail-image-item"
-                              key={`latest-img-${idx}`}
-                              onClick={() => expandImage(image.src)}
-                            >
-                              <img src={image.src} alt={`Latest drone ${idx + 1}`} />
-                              <span className="detail-image-time">{formatTimestamp(image.capturedAt)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {selectedDroneForDetail && (
-              <div className="detail-column" id="selected-drone-detail">
-                <div className="detail-column-header">
-                  <h3>Selected Drone</h3>
-                  <button
-                    type="button"
-                    className="detail-close-button"
-                    onClick={closeSelectedDetail}
-                    title="Close"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div className="detail-content">
-                  <div className="detail-info-row">
-                    <span className="detail-label">Name</span>
-                    <span className="detail-value">{selectedDroneForDetail.name}</span>
-                  </div>
-                  <div className="detail-info-row">
-                    <span className="detail-label">ID</span>
-                    <span className="detail-value">{selectedDroneForDetail.id}</span>
-                  </div>
-                  <div className="detail-info-row">
-                    <span className="detail-label">Camera</span>
-                    <span
-                      className="camera-badge"
-                      style={{ backgroundColor: selectedDroneForDetail.cameraColor }}
-                    >
-                      {selectedDroneForDetail.camId || "Unknown"}
-                    </span>
-                  </div>
-                  <div className="detail-info-row">
-                    <span className="detail-label">Latitude</span>
-                    <span className="detail-value">
-                      {selectedDroneForDetail.position && Number.isFinite(selectedDroneForDetail.position.lat)
-                        ? selectedDroneForDetail.position.lat.toFixed(6)
-                        : "—"}
-                    </span>
-                  </div>
-                  <div className="detail-info-row">
-                    <span className="detail-label">Longitude</span>
-                    <span className="detail-value">
-                      {selectedDroneForDetail.position && Number.isFinite(selectedDroneForDetail.position.lng)
-                        ? selectedDroneForDetail.position.lng.toFixed(6)
-                        : "—"}
-                    </span>
-                  </div>
-                  <div className="detail-info-row">
-                    <span className="detail-label">Velocity</span>
-                    <span className="detail-value">{formatVelocity(selectedDroneForDetail.velocity)}</span>
-                  </div>
-                  <div className="detail-info-row">
-                    <span className="detail-label">Direction</span>
-                    <span className="detail-value">{formatDirection(selectedDroneForDetail.direction)}</span>
-                  </div>
-                  <div className="detail-info-row">
-                    <span className="detail-label">Last Seen</span>
-                    <span className="detail-value">{formatTimestamp(selectedDroneForDetail.lastSeen)}</span>
-                  </div>
-                  {selectedDroneForDetail.images.length > 0 && (
-                    <div className="detail-image-gallery">
-                      <h4>Images ({selectedDroneForDetail.images.length})</h4>
-                      <div className="detail-image-grid">
-                        {selectedDroneForDetail.images.map((image, idx) => (
-                          <div
-                            className="detail-image-item"
-                            key={`selected-img-${idx}`}
-                            onClick={() => expandImage(image.src)}
-                          >
-                            <img src={image.src} alt={`Selected drone ${idx + 1}`} />
-                            <span className="detail-image-time">{formatTimestamp(image.capturedAt)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
             </div>
           )}
 

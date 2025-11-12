@@ -34,3 +34,17 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Mapbox Configuration
+
+The defense dashboard uses Mapbox GL JS for the live map. Supply a valid token via environment variables before running the app:
+
+1. Create a `.env.local` file in the project root (if it does not already exist).
+2. Add your Mapbox token:
+   ```
+   MAPBOX_ACCESS_TOKEN=pk.your-token-goes-here
+   ```
+3. Restart the Next.js dev server so the new environment variable is loaded.
+
+The frontend requests the token via `GET /api/mapbox/token`. If the variable is missing or invalid, the request returns an error and the dashboard will show an overlay explaining how to retry.  
+If you prefer to embed a token directly in the bundle, you can optionally set `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN`, which is used as a fallback when the API route is unreachable.

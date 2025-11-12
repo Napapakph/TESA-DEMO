@@ -7,7 +7,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import mgrs from "mgrs";
 import "@/app/styles/defense-dashboard.css";
 
-mapboxgl.accessToken = "pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw";
+mapboxgl.accessToken = "pk.eyJ1IjoiY2hhdGNoYWxlcm0iLCJhIjoiY21nZnpiYzU3MGRzdTJrczlkd3RxamN4YyJ9.k288gnCNLdLgczawiB79gQ";
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://13.229.79.193:3000/";
 const BASE_POSITION = { lat: 14.2059, lng: 101.2134 };
@@ -26,6 +26,75 @@ const CAMERA_COLOR_PALETTE = [
   "#fb7185",
   "#818cf8",
 ];
+
+const HISTORY_SORT_OPTIONS = [
+  { value: "latest", label: "Latest" },
+  { value: "camera", label: "Camera ID" },
+  { value: "type", label: "Drone Type" },
+];
+
+const HISTORY_ORDER_OPTIONS = [
+  { value: "asc", label: "Ascending" },
+  { value: "desc", label: "Descending" },
+];
+
+const HISTORY_LOG_SORT_OPTIONS = [
+  { value: "timestamp", label: "Timestamp" },
+  { value: "velocity", label: "Velocity" },
+  { value: "direction", label: "Direction" },
+];
+
+const HISTORY_DEFAULT_FILTERS = Object.freeze({
+  type: "all",
+  side: "defensive",
+  sort: "latest",
+  order: "asc",
+  page: 1,
+  limit: 20,
+});
+
+const HISTORY_LOGS_DEFAULTS = Object.freeze({
+  sort: "timestamp",
+  order: "asc",
+  limit: 10,
+});
+
+function normalizeHistoryEntry(entry) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+  const rawId =
+    entry.id ??
+    entry._id ??
+    entry.droneId ??
+    entry.drone_id ??
+    entry.drone_id ??
+    entry.uuid ??
+    null;
+  if (!rawId) {
+    return null;
+  }
+  const id = String(rawId);
+  const type = entry.type ?? entry.droneType ?? entry.model ?? "Unknown";
+  const side = entry.side ?? entry.affiliation ?? entry.role ?? "Unknown";
+  const camera = entry.cameraId ?? entry.camera_id ?? entry.camId ?? entry.cam_id ?? "Unknown";
+  const timestamp =
+    entry.timestamp ??
+    entry.time ??
+    entry.detectedAt ??
+    entry.createdAt ??
+    entry.updatedAt ??
+    null;
+
+  return {
+    id,
+    type,
+    side,
+    camera,
+    timestamp,
+    raw: entry,
+  };
+}
 
 function createLiveIntruderEntry(entry, previous) {
   const prev = previous ?? {};
@@ -305,6 +374,14 @@ function formatTimestamp(value) {
   return new Date(parsed).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function formatDateTime(value) {
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) {
+    return value ?? "—";
+  }
+  return new Date(parsed).toLocaleString();
+}
+
 export default function DefenseDashboard() {
   const mapRef = useRef(null);
   const mapContainerRef = useRef(null);
@@ -312,6 +389,7 @@ export default function DefenseDashboard() {
   const cameraInfoAbortRef = useRef(null);
   const cameraColorMapRef = useRef(new Map());
   const cameraColorIndexRef = useRef(0);
+  const selectedHistoryDroneRef = useRef(null);
 
   const [socketStatus, setSocketStatus] = useState("connecting");
   const [intruders, setIntruders] = useState([]);
@@ -327,8 +405,32 @@ export default function DefenseDashboard() {
   const [pinnedImageViewer, setPinnedImageViewer] = useState(false);
   const [expandedImage, setExpandedImage] = useState(null);
   const [focusedDroneId, setFocusedDroneId] = useState(null);
+  const [mapboxToken, setMapboxToken] = useState(null);
+  const [mapTokenStatus, setMapTokenStatus] = useState("idle");
+  const [mapboxTokenError, setMapboxTokenError] = useState(null);
+  const [mapTokenReloadKey, setMapTokenReloadKey] = useState(0);
+  const [mapStatus, setMapStatus] = useState("idle");
+  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [selectedDroneForDetail, setSelectedDroneForDetail] = useState(null);
+  const [latestDroneExpanded, setLatestDroneExpanded] = useState(true);
   const [lastClicked, setLastClicked] = useState(null);
   const [lastClickedMgrs, setLastClickedMgrs] = useState(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [historyFilters, setHistoryFilters] = useState(() => ({ ...HISTORY_DEFAULT_FILTERS }));
+  const [historyStatus, setHistoryStatus] = useState("idle");
+  const [historyError, setHistoryError] = useState(null);
+  const [historyEntries, setHistoryEntries] = useState([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [selectedHistoryDrone, setSelectedHistoryDrone] = useState(null);
+  const [historyDetails, setHistoryDetails] = useState(null);
+  const [historyDetailsStatus, setHistoryDetailsStatus] = useState("idle");
+  const [historyDetailsError, setHistoryDetailsError] = useState(null);
+  const [historyLogs, setHistoryLogs] = useState([]);
+  const [historyLogsStatus, setHistoryLogsStatus] = useState("idle");
+  const [historyLogsError, setHistoryLogsError] = useState(null);
+  const [historyLogsFilters, setHistoryLogsFilters] = useState(() => ({ ...HISTORY_LOGS_DEFAULTS }));
+  const [historyDetailsReloadKey, setHistoryDetailsReloadKey] = useState(0);
+  const [historyLogsReloadKey, setHistoryLogsReloadKey] = useState(0);
 
   const openImageViewer = useCallback((card) => {
     setImageViewer({ isOpen: true, droneId: card.id, images: card.images });
@@ -350,6 +452,128 @@ export default function DefenseDashboard() {
   const closeExpandedImage = useCallback(() => {
     setExpandedImage(null);
   }, []);
+
+  const reloadMapboxToken = useCallback(() => {
+    if (mapRef.current) {
+      mapRef.current.remove();
+      mapRef.current = null;
+      intruderMarkersRef.current.clear();
+    }
+    setMapboxToken(null);
+    setMapboxTokenError(null);
+    setMapStatus("idle");
+    setMapTokenStatus("idle");
+    setMapTokenReloadKey((key) => key + 1);
+  }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarExpanded((prev) => !prev);
+  }, []);
+
+  const closeSelectedDetail = useCallback(() => {
+    setSelectedDroneForDetail(null);
+  }, []);
+
+  const openHistory = useCallback(() => {
+    setIsHistoryOpen(true);
+    setHistoryStatus("loading");
+  }, []);
+
+  const closeHistory = useCallback(() => {
+    setIsHistoryOpen(false);
+    setHistoryStatus("idle");
+    setHistoryError(null);
+    setSelectedHistoryDrone(null);
+    setHistoryDetails(null);
+    setHistoryDetailsStatus("idle");
+    setHistoryDetailsError(null);
+    setHistoryLogs([]);
+    setHistoryLogsStatus("idle");
+    setHistoryLogsError(null);
+    setHistoryLogsFilters(() => ({ ...HISTORY_LOGS_DEFAULTS }));
+    setHistoryDetailsReloadKey(0);
+    setHistoryLogsReloadKey(0);
+  }, []);
+
+  const updateHistoryFilters = useCallback((patch) => {
+    setHistoryFilters((prev) => {
+      const next = { ...prev, ...patch };
+      const requiresReset = Object.keys(patch).some((key) =>
+        ["type", "side", "sort", "order", "limit"].includes(key),
+      );
+      if (requiresReset) {
+        next.page = 1;
+      }
+      if (next.limit < 1) {
+        next.limit = 1;
+      }
+      if (next.page < 1) {
+        next.page = 1;
+      }
+      return next;
+    });
+  }, []);
+
+  const goToHistoryPage = useCallback((pageDelta) => {
+    setHistoryFilters((prev) => {
+      const nextPage = Math.max(1, prev.page + pageDelta);
+      return { ...prev, page: nextPage };
+    });
+  }, []);
+
+  const updateHistoryLogsFilters = useCallback((patch) => {
+    setHistoryLogsFilters((prev) => {
+      const next = { ...prev, ...patch };
+      if (next.limit < 1) {
+        next.limit = 1;
+      }
+      return next;
+    });
+  }, []);
+
+  const handleHistoryItemClick = useCallback((entry) => {
+    if (!entry) return;
+    const isSame = selectedHistoryDroneRef.current?.id === entry.id;
+    setSelectedHistoryDrone(entry);
+    if (!isSame) {
+      setHistoryLogsFilters(() => ({ ...HISTORY_LOGS_DEFAULTS }));
+    }
+    setHistoryDetailsReloadKey((prev) => prev + 1);
+    setHistoryLogsReloadKey((prev) => prev + 1);
+  }, []);
+
+  const retryHistoryFetch = useCallback(() => {
+    setHistoryFilters((prev) => ({ ...prev }));
+  }, []);
+
+  const retryHistoryDetails = useCallback(() => {
+    if (selectedHistoryDroneRef.current) {
+      setHistoryDetailsReloadKey((prev) => prev + 1);
+    }
+  }, []);
+
+  const retryHistoryLogs = useCallback(() => {
+    if (selectedHistoryDroneRef.current) {
+      setHistoryLogsReloadKey((prev) => prev + 1);
+    }
+  }, []);
+
+  useEffect(() => {
+    selectedHistoryDroneRef.current = selectedHistoryDrone;
+  }, [selectedHistoryDrone]);
+
+  useEffect(() => {
+    if (!isHistoryOpen) return;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        closeHistory();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isHistoryOpen, closeHistory]);
 
   const cameraInfoEntries = useMemo(() => {
     if (!cameraInfoDetails || typeof cameraInfoDetails !== "object") return [];
@@ -559,30 +783,156 @@ export default function DefenseDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!mapContainerRef.current || mapRef.current) return;
+    let isMounted = true;
 
-    const map = new mapboxgl.Map({
-      container: mapContainerRef.current,
-      style: "mapbox://styles/mapbox/streets-v12",
-      center: [BASE_POSITION.lng, BASE_POSITION.lat],
-      zoom: 13,
-      minZoom: 6,
-      maxZoom: 19,
-      attributionControl: false,
-    });
+    async function loadToken() {
+      setMapTokenStatus("loading");
+      try {
+        const response = await fetch("/api/mapbox/token");
+        const raw = await response.text();
+        let payload = {};
 
-    map.on("click", (e) => {
-      handleMapClick({ latlng: { lat: e.lngLat.lat, lng: e.lngLat.lng } });
-    });
+        if (raw) {
+          try {
+            payload = JSON.parse(raw);
+          } catch {
+            payload = {};
+          }
+        }
 
-    mapRef.current = map;
+        if (!response.ok) {
+          const message =
+            (payload && typeof payload === "object" && payload.error) ||
+            `Request failed with status ${response.status}`;
+          throw new Error(message);
+        }
+
+        const token =
+          payload && typeof payload.token === "string"
+            ? payload.token.trim()
+            : "";
+
+        if (!token) {
+          throw new Error("Token missing from Mapbox token response.");
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setMapboxToken(token);
+        setMapboxTokenError(null);
+        setMapTokenStatus("ready");
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        const fallback = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN?.trim();
+        if (fallback) {
+          console.warn(
+            "Falling back to NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN due to Mapbox token API error:",
+            error
+          );
+          setMapboxToken(fallback);
+          setMapboxTokenError(null);
+          setMapTokenStatus("ready");
+          return;
+        }
+
+        console.error("Failed to retrieve Mapbox token:", error);
+        setMapboxToken(null);
+        setMapboxTokenError(
+          error?.message ?? "Failed to retrieve Mapbox access token."
+        );
+        setMapTokenStatus("error");
+      }
+    }
+
+    loadToken();
 
     return () => {
-      map.remove();
+      isMounted = false;
+    };
+  }, [mapTokenReloadKey]);
+
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current || !mapboxToken) {
+      return;
+    }
+
+    try {
+      mapboxgl.accessToken = mapboxToken;
+    } catch (error) {
+      console.error("Failed to set Mapbox access token:", error);
+      setMapboxTokenError(
+        error?.message ?? "Failed to apply Mapbox access token."
+      );
+      setMapStatus("error");
+      return;
+    }
+
+    let mapInstance;
+
+    try {
+      mapInstance = new mapboxgl.Map({
+        container: mapContainerRef.current,
+        style: "mapbox://styles/mapbox/streets-v12",
+        center: [BASE_POSITION.lng, BASE_POSITION.lat],
+        zoom: 13,
+        minZoom: 6,
+        maxZoom: 19,
+        attributionControl: false,
+      });
+    } catch (error) {
+      console.error("Failed to initialize Mapbox map:", error);
+      setMapboxTokenError(
+        error?.message ??
+          "Failed to initialize Mapbox map. Confirm the access token."
+      );
+      setMapStatus("error");
+      return;
+    }
+
+    const handleClick = (e) => {
+      handleMapClick({ latlng: { lat: e.lngLat.lat, lng: e.lngLat.lng } });
+    };
+
+    const handleLoad = () => {
+      setMapStatus("ready");
+    };
+
+    const handleError = (event) => {
+      const status =
+        event?.error?.status ??
+        event?.error?.statusCode ??
+        event?.error?.statusText;
+      const message =
+        status === 401 || status === 403
+          ? "Mapbox denied the request. Verify MAPBOX_ACCESS_TOKEN permissions."
+          : event?.error?.message ??
+            "Mapbox reported an unexpected error while loading the map.";
+
+      setMapboxTokenError(message);
+      setMapStatus((prev) => (prev === "ready" ? prev : "error"));
+      console.error("Mapbox map error:", event?.error ?? event);
+    };
+
+    mapInstance.on("click", handleClick);
+    mapInstance.once("load", handleLoad);
+    mapInstance.on("error", handleError);
+
+    mapRef.current = mapInstance;
+    setMapStatus("initializing");
+
+    return () => {
+      mapInstance.off("click", handleClick);
+      mapInstance.off("error", handleError);
+      mapInstance.remove();
       mapRef.current = null;
       intruderMarkersRef.current.clear();
     };
-  }, [handleMapClick]);
+  }, [handleMapClick, mapboxToken]);
 
   const handleFocusPrimary = useCallback(() => {
     if (!mapRef.current || !primaryFocusPosition) return;
@@ -600,6 +950,176 @@ export default function DefenseDashboard() {
     setSelectedCameraId(trimmedId);
     setCameraToken(tokenInput.trim());
   }, [cameraIdInput, tokenInput]);
+
+  useEffect(() => {
+    if (!isHistoryOpen) return;
+    let ignore = false;
+    const controller = new AbortController();
+
+    const fetchHistory = async () => {
+      setHistoryStatus("loading");
+      setHistoryError(null);
+      try {
+        const params = new URLSearchParams();
+        if (historyFilters.type && historyFilters.type !== "all") {
+          params.append("type", historyFilters.type);
+        }
+        params.append("side", historyFilters.side ?? "defensive");
+        if (historyFilters.sort) {
+          params.append("sort", historyFilters.sort);
+        }
+        if (historyFilters.order) {
+          params.append("order", historyFilters.order);
+        }
+        params.append("page", String(historyFilters.page));
+        params.append("limit", String(historyFilters.limit));
+
+        const response = await fetch(`/api/drones?${params.toString()}`, { signal: controller.signal });
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || `Failed to load history (${response.status})`);
+        }
+
+        const payload = await response.json();
+        if (ignore) return;
+
+        const rawItems = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
+        const normalized = rawItems.map(normalizeHistoryEntry).filter(Boolean);
+
+        setHistoryEntries(normalized);
+        setHistoryTotal(typeof payload?.total === "number" ? payload.total : normalized.length);
+        setHistoryStatus("success");
+
+        if (normalized.length === 0) {
+          setSelectedHistoryDrone(null);
+          setHistoryDetails(null);
+          setHistoryLogs([]);
+        } else {
+          const current = selectedHistoryDroneRef.current;
+          const existing = current ? normalized.find((entry) => entry.id === current.id) : null;
+          if (existing) {
+            setSelectedHistoryDrone(existing);
+          } else {
+            handleHistoryItemClick(normalized[0]);
+          }
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setHistoryEntries([]);
+        setHistoryTotal(0);
+        setHistoryStatus("error");
+        setHistoryError(error.message || "Failed to load history");
+      }
+    };
+
+    fetchHistory();
+
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, [isHistoryOpen, historyFilters, handleHistoryItemClick]);
+
+  useEffect(() => {
+    if (!isHistoryOpen || !selectedHistoryDrone) {
+      if (!selectedHistoryDrone) {
+        setHistoryDetails(null);
+        setHistoryDetailsStatus("idle");
+        setHistoryDetailsError(null);
+      }
+      return;
+    }
+
+    let ignore = false;
+    const controller = new AbortController();
+
+    const fetchDetails = async () => {
+      setHistoryDetailsStatus("loading");
+      setHistoryDetailsError(null);
+      try {
+        const response = await fetch(`/api/drones/${encodeURIComponent(selectedHistoryDrone.id)}`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || `Failed to load drone details (${response.status})`);
+        }
+        const payload = await response.json();
+        if (ignore) return;
+        const data =
+          (payload && typeof payload === "object" && payload !== null && payload.data) ?? payload ?? null;
+        setHistoryDetails(data);
+        setHistoryDetailsStatus("success");
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setHistoryDetails(null);
+        setHistoryDetailsStatus("error");
+        setHistoryDetailsError(error.message || "Failed to load drone details");
+      }
+    };
+
+    fetchDetails();
+
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, [isHistoryOpen, selectedHistoryDrone, historyDetailsReloadKey]);
+
+  useEffect(() => {
+    if (!isHistoryOpen || !selectedHistoryDrone) {
+      if (!selectedHistoryDrone) {
+        setHistoryLogs([]);
+      }
+      setHistoryLogsStatus("idle");
+      setHistoryLogsError(null);
+      return;
+    }
+
+    let ignore = false;
+    const controller = new AbortController();
+
+    const fetchLogs = async () => {
+      setHistoryLogsStatus("loading");
+      setHistoryLogsError(null);
+      try {
+        const params = new URLSearchParams();
+        if (historyLogsFilters.sort) {
+          params.append("sort", historyLogsFilters.sort);
+        }
+        if (historyLogsFilters.order) {
+          params.append("order", historyLogsFilters.order);
+        }
+        params.append("limit", String(historyLogsFilters.limit));
+
+        const response = await fetch(
+          `/api/drones/${encodeURIComponent(selectedHistoryDrone.id)}/logs?${params.toString()}`,
+          { signal: controller.signal },
+        );
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || `Failed to load drone logs (${response.status})`);
+        }
+        const payload = await response.json();
+        if (ignore) return;
+        const entries = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
+        setHistoryLogs(entries);
+        setHistoryLogsStatus("success");
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setHistoryLogs([]);
+        setHistoryLogsStatus("error");
+        setHistoryLogsError(error.message || "Failed to load drone logs");
+      }
+    };
+
+    fetchLogs();
+
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, [isHistoryOpen, selectedHistoryDrone, historyLogsFilters, historyLogsReloadKey]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -749,7 +1269,8 @@ export default function DefenseDashboard() {
           <button
             type="button"
             className="toolbar-button"
-            onClick={() => console.log("History requested")}
+            onClick={openHistory}
+            disabled={isHistoryOpen}
           >
             History
           </button>
@@ -757,108 +1278,59 @@ export default function DefenseDashboard() {
       </header>
 
       <div className="dashboard-body">
-        <aside className="sidebar-panel" onClick={(e) => e.stopPropagation()}>
+        <aside className={`sidebar-panel${sidebarExpanded ? "" : " collapsed"}`} onClick={(e) => e.stopPropagation()}>
           <div className="sidebar-header">
             <h2>Drone Status</h2>
-            <button
-              type="button"
-              className={`pin-toggle-button${pinnedImageViewer ? " pinned" : ""}`}
-              onClick={togglePinnedViewer}
-              title={pinnedImageViewer ? "Unpin viewer" : "Pin viewer"}
-            >
-              {pinnedImageViewer ? "📍locked" : "📌unlocked"}
-            </button>
+            <div className="sidebar-controls">
+              <button
+                type="button"
+                className="expand-collapse-button"
+                onClick={toggleSidebar}
+                title={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
+              >
+                {sidebarExpanded ? "◀" : "▶"}
+              </button>
+            </div>
           </div>
           <div className="drone-list">
             {droneCards.length === 0 ? (
               <div className="empty-state">Awaiting drone telemetry…</div>
             ) : (
               droneCards.map((card, index) => {
-                const inlineImages = card.images.slice(0, 1);
                 const isLatest = index === 0;
-                const isFocused = card.id === focusedDroneId;
-                const showViewMore = card.images.length > 1 && (isLatest || isFocused);
-                const cardId = isLatest ? "new-drone" : (isFocused && !isLatest ? "select-drone" : undefined);
+                const cardId = isLatest ? "new-drone" : undefined;
 
                 return (
                   <article
                     id={cardId}
-                    className="drone-card"
+                    className="drone-card-compact"
                     key={`${card.id}-${card.lastSeen}`}
-                    onClick={() => setFocusedDroneId(card.id)}
+                    onClick={() => setSelectedDroneForDetail(card)}
                   >
-                    {inlineImages.length > 0 && (
-                      <div className="drone-card-gallery">
-                        {inlineImages.map((image, index) => (
-                          <div className="drone-thumb" key={`${card.id}-img-${index}`}>
-                            <img src={image.src} alt={`${card.name} snapshot ${index + 1}`} />
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="drone-card-header">
-                      <div className="drone-card-title">{card.name}</div>
-                      <span
-                        className="camera-badge"
-                        style={{ backgroundColor: card.cameraColor }}
-                        title={`Camera ${card.camId || "Unknown"}`}
-                      >
-                        {card.camId || "Unknown"}
+                    <div className="compact-field">
+                      <span className="compact-label">ID</span>
+                      <span className="compact-value">{card.id}</span>
+                    </div>
+                    <div className="compact-field">
+                      <span className="compact-label">Lat</span>
+                      <span className="compact-value">
+                        {card.position && Number.isFinite(card.position.lat)
+                          ? card.position.lat.toFixed(5)
+                          : "—"}
                       </span>
                     </div>
-
-                    <div className="drone-card-meta-grid">
-                      <div>
-                        <span className="meta-label">ID</span>
-                        <span className="meta-value">{card.id}</span>
-                      </div>
-                      <div>
-                        <span className="meta-label">Lat</span>
-                        <span className="meta-value">
-                          {card.position && Number.isFinite(card.position.lat)
-                            ? card.position.lat.toFixed(5)
-                            : "—"}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="meta-label">Lon</span>
-                        <span className="meta-value">
-                          {card.position && Number.isFinite(card.position.lng)
-                            ? card.position.lng.toFixed(5)
-                            : "—"}
-                        </span>
-                      </div>
-      
-                      <div>
-                        <span className="meta-label">Velocity</span>
-                        <span className="meta-value">{formatVelocity(card.velocity)}</span>
-                      </div>
-                      <div>
-                        <span className="meta-label">Direction</span>
-                        <span className="meta-value">{formatDirection(card.direction)}</span>
-                      </div>
-                      <div>
-                        <span className="meta-label">Last Seen</span>
-                        <span className="meta-value">{formatTimestamp(card.lastSeen)}</span>
-                      </div>
+                    <div className="compact-field">
+                      <span className="compact-label">Lon</span>
+                      <span className="compact-value">
+                        {card.position && Number.isFinite(card.position.lng)
+                          ? card.position.lng.toFixed(5)
+                          : "—"}
+                      </span>
                     </div>
-
-                    {showViewMore && (
-                      <div className="drone-card-actions">
-                        <span>{card.images.length} images captured</span>
-                        <button
-                          type="button"
-                          className="view-more-button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openImageViewer(card);
-                          }}
-                        >
-                          View more
-                        </button>
-                      </div>
-                    )}
+                    <div className="compact-field">
+                      <span className="compact-label">Time</span>
+                      <span className="compact-value">{formatTimestamp(card.lastSeen)}</span>
+                    </div>
                   </article>
                 );
               })
@@ -868,6 +1340,210 @@ export default function DefenseDashboard() {
 
         <main className="map-wrapper">
           <div ref={mapContainerRef} className="map-layer" />
+          {mapTokenStatus === "loading" && (
+            <div className="map-status-message info">กำลังโหลดแผนที่จาก Mapbox…</div>
+          )}
+          {mapStatus === "initializing" && !mapboxTokenError && (
+            <div className="map-status-message info">กำลังเตรียมแผนที่…</div>
+          )}
+          {mapboxTokenError && (
+            <div className="map-status-message error">
+              <p>ไม่สามารถโหลดแผนที่: {mapboxTokenError}</p>
+              <button type="button" onClick={reloadMapboxToken}>
+                ลองอีกครั้ง
+              </button>
+            </div>
+          )}
+
+          {droneCards.length > 0 && (
+            <div className="detail-panel">
+            <div className={`detail-column${latestDroneExpanded ? "" : " collapsed"}`} id="latest-drone-detail">
+              <div className="detail-column-header">
+                {latestDroneExpanded ? (
+                  <>
+                    <h3>Latest Drone</h3>
+                    <span className="detail-badge latest">New</span>
+                    <button
+                      type="button"
+                      className="detail-collapse-button"
+                      onClick={() => setLatestDroneExpanded(false)}
+                      title="Collapse"
+                    >
+                      ▼
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {droneCards[0] && droneCards[0].images.length > 0 && (
+                      <img
+                        className="collapsed-thumbnail"
+                        src={droneCards[0].images[0].src}
+                        alt="Latest drone"
+                      />
+                    )}
+                    <span className="collapsed-id">ID: {droneCards[0]?.id}</span>
+                    <button
+                      type="button"
+                      className="detail-expand-button"
+                      onClick={() => setLatestDroneExpanded(true)}
+                      title="Expand"
+                    >
+                      ▲
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="detail-content">
+                {droneCards[0] && (
+                  <>
+                    <div className="detail-info-row">
+                      <span className="detail-label">Name</span>
+                      <span className="detail-value">{droneCards[0].name}</span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">ID</span>
+                      <span className="detail-value">{droneCards[0].id}</span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">Camera</span>
+                      <span
+                        className="camera-badge"
+                        style={{ backgroundColor: droneCards[0].cameraColor }}
+                      >
+                        {droneCards[0].camId || "Unknown"}
+                      </span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">Latitude</span>
+                      <span className="detail-value">
+                        {droneCards[0].position && Number.isFinite(droneCards[0].position.lat)
+                          ? droneCards[0].position.lat.toFixed(6)
+                          : "—"}
+                      </span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">Longitude</span>
+                      <span className="detail-value">
+                        {droneCards[0].position && Number.isFinite(droneCards[0].position.lng)
+                          ? droneCards[0].position.lng.toFixed(6)
+                          : "—"}
+                      </span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">Velocity</span>
+                      <span className="detail-value">{formatVelocity(droneCards[0].velocity)}</span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">Direction</span>
+                      <span className="detail-value">{formatDirection(droneCards[0].direction)}</span>
+                    </div>
+                    <div className="detail-info-row">
+                      <span className="detail-label">Last Seen</span>
+                      <span className="detail-value">{formatTimestamp(droneCards[0].lastSeen)}</span>
+                    </div>
+                    {droneCards[0].images.length > 0 && (
+                      <div className="detail-image-gallery">
+                        <h4>Images ({droneCards[0].images.length})</h4>
+                        <div className="detail-image-grid">
+                          {droneCards[0].images.map((image, idx) => (
+                            <div
+                              className="detail-image-item"
+                              key={`latest-img-${idx}`}
+                              onClick={() => expandImage(image.src)}
+                            >
+                              <img src={image.src} alt={`Latest drone ${idx + 1}`} />
+                              <span className="detail-image-time">{formatTimestamp(image.capturedAt)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            {selectedDroneForDetail && (
+              <div className="detail-column" id="selected-drone-detail">
+                <div className="detail-column-header">
+                  <h3>Selected Drone</h3>
+                  <button
+                    type="button"
+                    className="detail-close-button"
+                    onClick={closeSelectedDetail}
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="detail-content">
+                  <div className="detail-info-row">
+                    <span className="detail-label">Name</span>
+                    <span className="detail-value">{selectedDroneForDetail.name}</span>
+                  </div>
+                  <div className="detail-info-row">
+                    <span className="detail-label">ID</span>
+                    <span className="detail-value">{selectedDroneForDetail.id}</span>
+                  </div>
+                  <div className="detail-info-row">
+                    <span className="detail-label">Camera</span>
+                    <span
+                      className="camera-badge"
+                      style={{ backgroundColor: selectedDroneForDetail.cameraColor }}
+                    >
+                      {selectedDroneForDetail.camId || "Unknown"}
+                    </span>
+                  </div>
+                  <div className="detail-info-row">
+                    <span className="detail-label">Latitude</span>
+                    <span className="detail-value">
+                      {selectedDroneForDetail.position && Number.isFinite(selectedDroneForDetail.position.lat)
+                        ? selectedDroneForDetail.position.lat.toFixed(6)
+                        : "—"}
+                    </span>
+                  </div>
+                  <div className="detail-info-row">
+                    <span className="detail-label">Longitude</span>
+                    <span className="detail-value">
+                      {selectedDroneForDetail.position && Number.isFinite(selectedDroneForDetail.position.lng)
+                        ? selectedDroneForDetail.position.lng.toFixed(6)
+                        : "—"}
+                    </span>
+                  </div>
+                  <div className="detail-info-row">
+                    <span className="detail-label">Velocity</span>
+                    <span className="detail-value">{formatVelocity(selectedDroneForDetail.velocity)}</span>
+                  </div>
+                  <div className="detail-info-row">
+                    <span className="detail-label">Direction</span>
+                    <span className="detail-value">{formatDirection(selectedDroneForDetail.direction)}</span>
+                  </div>
+                  <div className="detail-info-row">
+                    <span className="detail-label">Last Seen</span>
+                    <span className="detail-value">{formatTimestamp(selectedDroneForDetail.lastSeen)}</span>
+                  </div>
+                  {selectedDroneForDetail.images.length > 0 && (
+                    <div className="detail-image-gallery">
+                      <h4>Images ({selectedDroneForDetail.images.length})</h4>
+                      <div className="detail-image-grid">
+                        {selectedDroneForDetail.images.map((image, idx) => (
+                          <div
+                            className="detail-image-item"
+                            key={`selected-img-${idx}`}
+                            onClick={() => expandImage(image.src)}
+                          >
+                            <img src={image.src} alt={`Selected drone ${idx + 1}`} />
+                            <span className="detail-image-time">{formatTimestamp(image.capturedAt)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            </div>
+          )}
 
           <section className="camera-overlay">
             <form className="camera-form" onSubmit={handleCameraSubmit}>
@@ -954,6 +1630,270 @@ export default function DefenseDashboard() {
           </div>
         </main>
       </div>
+
+      {isHistoryOpen && (
+        <div className="history-backdrop" role="dialog" aria-modal="true" onClick={closeHistory}>
+          <div className="history-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="history-header">
+              <h2>Drone History</h2>
+              <button type="button" className="history-close-button" onClick={closeHistory} title="Close history">
+                ✕
+              </button>
+            </header>
+
+            <section className="history-filters">
+              <div className="history-filters-row">
+                <label className="history-filter">
+                  <span>Type</span>
+                  <input
+                    type="text"
+                    value={historyFilters.type === "all" ? "" : historyFilters.type}
+                    placeholder="Any type"
+                    onChange={(event) =>
+                      updateHistoryFilters({ type: event.target.value.trim() || "all" })
+                    }
+                  />
+                </label>
+                <label className="history-filter">
+                  <span>Side</span>
+                  <select
+                    value={historyFilters.side}
+                    onChange={(event) => updateHistoryFilters({ side: event.target.value })}
+                  >
+                    <option value="defensive">Defensive</option>
+                    <option value="offensive">Offensive</option>
+                    <option value="all">All</option>
+                  </select>
+                </label>
+                <label className="history-filter">
+                  <span>Sort</span>
+                  <select
+                    value={historyFilters.sort}
+                    onChange={(event) => updateHistoryFilters({ sort: event.target.value })}
+                  >
+                    {HISTORY_SORT_OPTIONS.map((option) => (
+                      <option value={option.value} key={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="history-filter">
+                  <span>Order</span>
+                  <select
+                    value={historyFilters.order}
+                    onChange={(event) => updateHistoryFilters({ order: event.target.value })}
+                  >
+                    {HISTORY_ORDER_OPTIONS.map((option) => (
+                      <option value={option.value} key={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="history-filter">
+                  <span>Limit</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={historyFilters.limit}
+                    onChange={(event) => {
+                      const value = Number.parseInt(event.target.value, 10);
+                      updateHistoryFilters({ limit: Number.isNaN(value) ? 1 : value });
+                    }}
+                  />
+                </label>
+              </div>
+            </section>
+
+            <div className="history-body">
+              <aside className="history-list">
+                <div className="history-list-header">
+                  <div className="history-summary">
+                    Total: {historyTotal.toLocaleString()}
+                  </div>
+                  <div className="history-pagination">
+                    <button
+                      type="button"
+                      onClick={() => goToHistoryPage(-1)}
+                      disabled={historyFilters.page <= 1 || historyStatus === "loading"}
+                    >
+                      ◀
+                    </button>
+                    <span>Page {historyFilters.page}</span>
+                    <button
+                      type="button"
+                      onClick={() => goToHistoryPage(1)}
+                      disabled={
+                        historyStatus === "loading" ||
+                        historyEntries.length < historyFilters.limit ||
+                        historyFilters.page * historyFilters.limit >= historyTotal
+                      }
+                    >
+                      ▶
+                    </button>
+                  </div>
+                </div>
+
+                <div className="history-list-scroll">
+                  {historyStatus === "loading" ? (
+                    <div className="history-loading">Loading history…</div>
+                  ) : historyStatus === "error" ? (
+                    <div className="history-error">
+                      <span>{historyError || "Failed to load history data."}</span>
+                      <button type="button" onClick={retryHistoryFetch}>
+                        Retry
+                      </button>
+                    </div>
+                  ) : historyEntries.length === 0 ? (
+                    <div className="history-empty">No history data available.</div>
+                  ) : (
+                    historyEntries.map((entry) => {
+                      const isSelected = selectedHistoryDrone?.id === entry.id;
+                      return (
+                        <button
+                          type="button"
+                          key={entry.id}
+                          className={`history-item${isSelected ? " history-item--selected" : ""}`}
+                          onClick={() => handleHistoryItemClick(entry)}
+                        >
+                          <span className="history-item-id">{entry.id}</span>
+                          <span className="history-item-meta">
+                            {entry.type} • {entry.side}
+                          </span>
+                          <span className="history-item-meta">
+                            Camera: {entry.camera}
+                          </span>
+                          <span className="history-item-meta">
+                            {entry.timestamp ? formatDateTime(entry.timestamp) : "Unknown time"}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </aside>
+
+              <section className="history-detail-pane">
+                <div className="history-detail-section">
+                  <div className="history-detail-header">
+                    <h3>Details</h3>
+                    {historyDetailsStatus === "error" && (
+                      <button type="button" onClick={retryHistoryDetails}>
+                        Retry
+                      </button>
+                    )}
+                  </div>
+                  {selectedHistoryDrone ? (
+                    historyDetailsStatus === "loading" ? (
+                      <div className="history-loading">Loading drone details…</div>
+                    ) : historyDetailsStatus === "error" ? (
+                      <div className="history-error">
+                        {historyDetailsError || "Failed to load drone details."}
+                      </div>
+                    ) : historyDetails ? (
+                      <div className="history-detail-grid">
+                        {Object.entries(historyDetails).map(([key, value]) => (
+                          <div className="history-detail-row" key={key}>
+                            <span className="history-detail-key">{formatLabel(key)}</span>
+                            <span className="history-detail-value">{formatCameraValue(value)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="history-empty">No details available for this drone.</div>
+                    )
+                  ) : (
+                    <div className="history-empty">Select a drone to view its details.</div>
+                  )}
+                </div>
+
+                <div className="history-detail-section">
+                  <div className="history-detail-header">
+                    <h3>Logs</h3>
+                    <div className="history-logs-filters">
+                      <select
+                        value={historyLogsFilters.sort}
+                        onChange={(event) =>
+                          updateHistoryLogsFilters({ sort: event.target.value })
+                        }
+                      >
+                        {HISTORY_LOG_SORT_OPTIONS.map((option) => (
+                          <option value={option.value} key={option.value}>
+                            Sort: {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={historyLogsFilters.order}
+                        onChange={(event) =>
+                          updateHistoryLogsFilters({ order: event.target.value })
+                        }
+                      >
+                        {HISTORY_ORDER_OPTIONS.map((option) => (
+                          <option value={option.value} key={option.value}>
+                            Order: {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min="1"
+                        value={historyLogsFilters.limit}
+                        onChange={(event) => {
+                          const value = Number.parseInt(event.target.value, 10);
+                          updateHistoryLogsFilters({
+                            limit: Number.isNaN(value) ? 1 : value,
+                          });
+                        }}
+                      />
+                      <button type="button" onClick={retryHistoryLogs}>
+                        Refresh
+                      </button>
+                    </div>
+                  </div>
+
+                  {selectedHistoryDrone ? (
+                    historyLogsStatus === "loading" ? (
+                      <div className="history-loading">Loading drone logs…</div>
+                    ) : historyLogsStatus === "error" ? (
+                      <div className="history-error">
+                        <span>{historyLogsError || "Failed to load drone logs."}</span>
+                        <button type="button" onClick={retryHistoryLogs}>
+                          Retry
+                        </button>
+                      </div>
+                    ) : historyLogs.length === 0 ? (
+                      <div className="history-empty">No logs available for this drone.</div>
+                    ) : (
+                      <ul className="history-log-list">
+                        {historyLogs.map((log, index) => (
+                          <li className="history-log-item" key={log.id ?? index}>
+                            <span className="history-log-time">
+                              {log.timestamp ? formatDateTime(log.timestamp) : `Log ${index + 1}`}
+                            </span>
+                            <span className="history-log-meta">
+                              Velocity: {formatVelocity(log.velocity)}
+                            </span>
+                            <span className="history-log-meta">
+                              Direction: {formatDirection(log.direction)}
+                            </span>
+                            <span className="history-log-meta">
+                              Altitude: {log.altitude ?? "—"}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )
+                  ) : (
+                    <div className="history-empty">Select a drone to view its logs.</div>
+                  )}
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
 
       {imageViewer.isOpen && (
         <div className="image-viewer-backdrop" role="dialog" aria-modal="true">

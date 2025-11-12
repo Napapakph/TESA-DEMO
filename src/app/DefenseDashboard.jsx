@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
 import mgrs from "mgrs";
 import "@/app/styles/defense-dashboard.css";
+
+mapboxgl.accessToken = "pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw";
 
 const SOCKET_URL = "http://192.168.1.104:3000";
 const BASE_POSITION = { lat: 14.2059, lng: 101.2134 };
@@ -110,26 +112,23 @@ function renderDronePopupContent(intruder) {
   `;
 }
 
-function createIntruderIcon(intruder) {
+function createDroneMarkerElement(intruder) {
   const heading = Number.isFinite(intruder.direction) ? intruder.direction : 0;
   const imageSource = intruder.imgbase64 || DRONE_ICON_SRC;
-  const safeSource = escapeHtml(imageSource);
-  return L.divIcon({
-    className: "drone-marker",
-    html: `
-      <div class="drone-marker-wrapper" style="transform: rotate(${heading}deg)">
-        <img class="drone-marker-image" src="${safeSource}" alt="${escapeHtml(intruder.name ?? "drone")}" />
-      </div>
-    `,
-    iconSize: [48, 48],
-    iconAnchor: [24, 24],
-  });
+  
+  const el = document.createElement("div");
+  el.className = "drone-marker";
+  el.innerHTML = `
+    <div class="drone-marker-wrapper" style="transform: rotate(${heading}deg)">
+      <img class="drone-marker-image" src="${escapeHtml(imageSource)}" alt="${escapeHtml(intruder.name ?? "drone")}" />
+    </div>
+  `;
+  return el;
 }
 
 export default function DefenseDashboard() {
   const mapRef = useRef(null);
   const mapContainerRef = useRef(null);
-  const intruderLayerRef = useRef(null);
   const intruderMarkersRef = useRef(new Map());
 
   const [socketStatus, setSocketStatus] = useState("connecting");
@@ -196,28 +195,25 @@ export default function DefenseDashboard() {
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
-    const map = L.map(mapContainerRef.current, {
-      center: [BASE_POSITION.lat, BASE_POSITION.lng],
+    const map = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: "mapbox://styles/mapbox/streets-v12",
+      center: [BASE_POSITION.lng, BASE_POSITION.lat],
       zoom: 13,
       minZoom: 6,
       maxZoom: 19,
-      zoomControl: false,
       attributionControl: false,
     });
 
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-    }).addTo(map);
+    map.on("click", (e) => {
+      handleMapClick({ latlng: { lat: e.lngLat.lat, lng: e.lngLat.lng } });
+    });
 
-    intruderLayerRef.current = L.layerGroup().addTo(map);
-    map.on("click", handleMapClick);
     mapRef.current = map;
 
     return () => {
-      map.off("click", handleMapClick);
       map.remove();
       mapRef.current = null;
-      intruderLayerRef.current = null;
       intruderMarkersRef.current.clear();
     };
   }, [handleMapClick]);
@@ -225,8 +221,10 @@ export default function DefenseDashboard() {
   const handleFocusPrimary = useCallback(() => {
     if (!mapRef.current || !primaryFocusPosition) return;
     const currentZoom = mapRef.current.getZoom();
-    mapRef.current.flyTo([primaryFocusPosition.lat, primaryFocusPosition.lng], Math.max(currentZoom, 14), {
-      duration: 0.8,
+    mapRef.current.flyTo({
+      center: [primaryFocusPosition.lng, primaryFocusPosition.lat],
+      zoom: Math.max(currentZoom, 14),
+      duration: 800,
     });
   }, [primaryFocusPosition]);
 
@@ -248,7 +246,7 @@ export default function DefenseDashboard() {
   }, [cameraInfo, selectedCameraId, cameraIdInput]);
 
   useEffect(() => {
-    if (!mapRef.current || !intruderLayerRef.current) return;
+    if (!mapRef.current) return;
 
     const activeIds = new Set();
 
@@ -261,40 +259,55 @@ export default function DefenseDashboard() {
       const existing = intruderMarkersRef.current.get(intruder.id);
 
       if (!existing) {
-        const marker = L.marker(intruder.position, {
-          icon: createIntruderIcon(intruder),
-          bubblingMouseEvents: false,
-        }).addTo(intruderLayerRef.current);
+        const el = createDroneMarkerElement(intruder);
+        
+        const marker = new mapboxgl.Marker({
+          element: el,
+          anchor: "center",
+        })
+          .setLngLat([intruder.position.lng, intruder.position.lat])
+          .addTo(mapRef.current);
 
-        marker.bindPopup(renderDronePopupContent(intruder), {
+        const popup = new mapboxgl.Popup({
           closeButton: false,
-          autoPan: false,
+          closeOnClick: false,
           className: "drone-popup",
+          offset: 25,
+        }).setHTML(renderDronePopupContent(intruder));
+
+        el.addEventListener("mouseenter", () => {
+          marker.setPopup(popup);
+          marker.togglePopup();
         });
 
-        marker.on("mouseover", () => {
-          marker.openPopup();
-        });
-        marker.on("mouseout", () => {
-          marker.closePopup();
+        el.addEventListener("mouseleave", () => {
+          marker.togglePopup();
         });
 
-        intruderMarkersRef.current.set(intruder.id, marker);
+        intruderMarkersRef.current.set(intruder.id, { marker, element: el, popup });
       } else {
-        existing.setLatLng(intruder.position);
-        existing.setIcon(createIntruderIcon(intruder));
-        const popup = existing.getPopup();
-        if (popup) {
-          popup.setContent(renderDronePopupContent(intruder));
+        existing.marker.setLngLat([intruder.position.lng, intruder.position.lat]);
+        
+        const heading = Number.isFinite(intruder.direction) ? intruder.direction : 0;
+        const wrapper = existing.element.querySelector(".drone-marker-wrapper");
+        if (wrapper) {
+          wrapper.style.transform = `rotate(${heading}deg)`;
         }
+        
+        const img = existing.element.querySelector(".drone-marker-image");
+        if (img && intruder.imgbase64) {
+          img.src = intruder.imgbase64;
+        }
+
+        existing.popup.setHTML(renderDronePopupContent(intruder));
       }
     });
 
-    intruderMarkersRef.current.forEach((marker, id) => {
+    intruderMarkersRef.current.forEach((markerData, id) => {
       if (!activeIds.has(id)) {
-        marker.off("mouseover");
-        marker.off("mouseout");
-        intruderLayerRef.current.removeLayer(marker);
+        markerData.element.removeEventListener("mouseenter", () => {});
+        markerData.element.removeEventListener("mouseleave", () => {});
+        markerData.marker.remove();
         intruderMarkersRef.current.delete(id);
       }
     });

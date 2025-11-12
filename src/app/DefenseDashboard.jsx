@@ -324,6 +324,9 @@ export default function DefenseDashboard() {
   const [cameraInfoError, setCameraInfoError] = useState(null);
   const [cameraInfoDetails, setCameraInfoDetails] = useState(null);
   const [imageViewer, setImageViewer] = useState({ isOpen: false, droneId: null, images: [] });
+  const [pinnedImageViewer, setPinnedImageViewer] = useState(false);
+  const [expandedImage, setExpandedImage] = useState(null);
+  const [focusedDroneId, setFocusedDroneId] = useState(null);
   const [lastClicked, setLastClicked] = useState(null);
   const [lastClickedMgrs, setLastClickedMgrs] = useState(null);
 
@@ -333,6 +336,19 @@ export default function DefenseDashboard() {
 
   const closeImageViewer = useCallback(() => {
     setImageViewer({ isOpen: false, droneId: null, images: [] });
+    setPinnedImageViewer(false);
+  }, []);
+
+  const togglePinnedViewer = useCallback(() => {
+    setPinnedImageViewer((prev) => !prev);
+  }, []);
+
+  const expandImage = useCallback((imageSrc) => {
+    setExpandedImage(imageSrc);
+  }, []);
+
+  const closeExpandedImage = useCallback(() => {
+    setExpandedImage(null);
   }, []);
 
   const cameraInfoEntries = useMemo(() => {
@@ -681,7 +697,13 @@ export default function DefenseDashboard() {
       }
 
       setIntruders((previous) => buildLiveIntruders(intruderPayload, previous));
-      setDroneCards((previous) => mergeDroneCards(previous, cardEntries, getCameraColor));
+      setDroneCards((previous) => {
+        const updated = mergeDroneCards(previous, cardEntries, getCameraColor);
+        if (updated.length > 0 && updated[0].id !== focusedDroneId) {
+          setFocusedDroneId(updated[0].id);
+        }
+        return updated;
+      });
     };
 
     socket.on("connect", () => {
@@ -735,22 +757,46 @@ export default function DefenseDashboard() {
       </header>
 
       <div className="dashboard-body">
-        <aside className="sidebar-panel">
-          <h2>Drone Status</h2>
+        <aside className="sidebar-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="sidebar-header">
+            <h2>Drone Status</h2>
+            <button
+              type="button"
+              className={`pin-toggle-button${pinnedImageViewer ? " pinned" : ""}`}
+              onClick={togglePinnedViewer}
+              title={pinnedImageViewer ? "Unpin viewer" : "Pin viewer"}
+            >
+              {pinnedImageViewer ? "📍locked" : "📌unlocked"}
+            </button>
+          </div>
           <div className="drone-list">
             {droneCards.length === 0 ? (
               <div className="empty-state">Awaiting drone telemetry…</div>
             ) : (
-              droneCards.map((card) => {
-                const inlineImages = card.images.slice(0, MAX_INLINE_IMAGES);
-                const hasOverflowImages = card.images.length > MAX_INLINE_IMAGES;
-                const showInlineImages = inlineImages.length > 0 && !hasOverflowImages;
+              droneCards.map((card, index) => {
+                const inlineImages = card.images.slice(0, 1);
+                const isLatest = index === 0;
+                const isFocused = card.id === focusedDroneId;
+                const showViewMore = card.images.length > 1 && (isLatest || isFocused);
+                const cardId = isLatest ? "new-drone" : (isFocused && !isLatest ? "select-drone" : undefined);
 
                 return (
                   <article
-                    className={`drone-card${hasOverflowImages ? " drone-card--compact" : ""}`}
+                    id={cardId}
+                    className="drone-card"
                     key={`${card.id}-${card.lastSeen}`}
+                    onClick={() => setFocusedDroneId(card.id)}
                   >
+                    {inlineImages.length > 0 && (
+                      <div className="drone-card-gallery">
+                        {inlineImages.map((image, index) => (
+                          <div className="drone-thumb" key={`${card.id}-img-${index}`}>
+                            <img src={image.src} alt={`${card.name} snapshot ${index + 1}`} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     <div className="drone-card-header">
                       <div className="drone-card-title">{card.name}</div>
                       <span
@@ -783,22 +829,7 @@ export default function DefenseDashboard() {
                             : "—"}
                         </span>
                       </div>
-                      <div>
-                        <span className="meta-label">Lat</span>
-                        <span className="meta-value">
-                          {card.position && Number.isFinite(card.position.lat)
-                            ? card.position.lat.toFixed(5)
-                            : "—"}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="meta-label">Lon</span>
-                        <span className="meta-value">
-                          {card.position && Number.isFinite(card.position.lng)
-                            ? card.position.lng.toFixed(5)
-                            : "—"}
-                        </span>
-                      </div>
+      
                       <div>
                         <span className="meta-label">Velocity</span>
                         <span className="meta-value">{formatVelocity(card.velocity)}</span>
@@ -813,24 +844,16 @@ export default function DefenseDashboard() {
                       </div>
                     </div>
 
-                    {showInlineImages && (
-                      <div className="drone-card-gallery">
-                        {inlineImages.map((image, index) => (
-                          <div className="drone-thumb" key={`${card.id}-img-${index}`}>
-                            <img src={image.src} alt={`${card.name} snapshot ${index + 1}`} />
-                            <span className="drone-thumb-time"></span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {hasOverflowImages && (
+                    {showViewMore && (
                       <div className="drone-card-actions">
                         <span>{card.images.length} images captured</span>
                         <button
                           type="button"
                           className="view-more-button"
-                          onClick={() => openImageViewer(card)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openImageViewer(card);
+                          }}
                         >
                           View more
                         </button>
@@ -937,23 +960,55 @@ export default function DefenseDashboard() {
           <div className="image-viewer-modal">
             <div className="image-viewer-header">
               <h3>Drone {imageViewer.droneId} Images</h3>
-              <button
-                type="button"
-                className="image-viewer-close"
-                onClick={closeImageViewer}
-              >
-                Close
-              </button>
+              <div className="image-viewer-controls">
+                <button
+                  type="button"
+                  className={`pin-button${pinnedImageViewer ? " pinned" : ""}`}
+                  onClick={togglePinnedViewer}
+                  title={pinnedImageViewer ? "Unpin viewer" : "Pin viewer"}
+                >
+                  {pinnedImageViewer ? "📍" : "📌"}
+                </button>
+                <button
+                  type="button"
+                  className="image-viewer-close"
+                  onClick={closeImageViewer}
+                >
+                  ✕
+                </button>
+              </div>
             </div>
             <div className="image-viewer-grid">
               {imageViewer.images.map((image, index) => (
-                <figure className="image-viewer-item" key={`${imageViewer.droneId}-viewer-${index}`}>
+                <figure
+                  className="image-viewer-item"
+                  key={`${imageViewer.droneId}-viewer-${index}`}
+                  onClick={() => expandImage(image.src)}
+                >
                   <img src={image.src} alt={`Drone ${imageViewer.droneId} frame ${index + 1}`} />
                   <figcaption>{formatTimestamp(image.capturedAt)}</figcaption>
                 </figure>
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {expandedImage && (
+        <div
+          className="expanded-image-overlay"
+          onClick={closeExpandedImage}
+          role="dialog"
+          aria-modal="true"
+        >
+          <button
+            type="button"
+            className="expanded-image-close"
+            onClick={closeExpandedImage}
+          >
+            ✕
+          </button>
+          <img src={expandedImage} alt="Expanded view" onClick={(e) => e.stopPropagation()} />
         </div>
       )}
     </div>

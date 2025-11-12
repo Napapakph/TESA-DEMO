@@ -16,7 +16,6 @@ import MissionControl from "@/app/components/intregration/MissionControl";
 import FlightControlPanel from "@/app/components/intregration/FlightControlPanel";
 import ThreatPanel from "@/app/components/intregration/ThreatPanel";
 import AlertLogPanel from "@/app/components/intregration/AlertLogPanel";
-import { createIntruderSeeds, tickIntruderPositions } from "@/app/data/mockIntruders";
 
 const markerIconRetina = typeof markerIcon2xUrl === "string" ? markerIcon2xUrl : markerIcon2xUrl.src;
 const markerIcon = typeof markerIconUrl === "string" ? markerIconUrl : markerIconUrl.src;
@@ -30,6 +29,89 @@ L.Icon.Default.mergeOptions({
 
 const BASE_POSITION = { lat: 14.2059, lng: 101.2134 };
 const EARTH_RADIUS_METERS = 6371000;
+
+const LIVE_WEBSOCKET_PATH = "http://10.110.54.44:3000/";
+
+const LIVE_INTRUDER_SAMPLE = [
+  {
+    droneId: 0,
+    type: "DJIAir",
+    lat: 14.30015,
+    lng: 101.17104,
+    velocity: 0.83,
+    direction: 357.5,
+    time: "2025-11-11T19:21:24.000Z",
+    isDrone: true,
+    cam_id: "cam002",
+  },
+  {
+    droneId: 1,
+    type: "AutelEvo",
+    lat: 14.3088,
+    lng: 101.15787,
+    velocity: 12.84,
+    direction: 343.4,
+    time: "2025-11-11T19:21:24.000Z",
+    isDrone: true,
+    cam_id: "cam002",
+  },
+  {
+    droneId: 2,
+    type: "DJIMavic",
+    lat: 14.29947,
+    lng: 101.1585,
+    velocity: 10.55,
+    direction: 145,
+    time: "2025-11-11T19:21:24.000Z",
+    isDrone: true,
+    cam_id: "cam001",
+  },
+  {
+    droneId: 3,
+    type: "ParrotAnafi",
+    lat: 14.30618,
+    lng: 101.16148,
+    velocity: 12.57,
+    direction: 317.6,
+    time: "2025-11-11T19:21:24.000Z",
+    isDrone: true,
+    cam_id: "cam001",
+  },
+];
+
+function toWebSocketUrl(path) {
+  if (path.startsWith("ws://") || path.startsWith("wss://")) {
+    return path;
+  }
+  return path.replace(/^https?:/, (match) => (match === "https:" ? "wss:" : "ws:"));
+}
+
+function createLiveIntruderEntry(entry, previous) {
+  const prev = previous ?? {};
+  return {
+    id: String(entry.droneId),
+    name: entry.type ?? `Drone ${entry.droneId}`,
+    position: { lat: entry.lat, lng: entry.lng },
+    velocity: entry.velocity,
+    direction: entry.direction,
+    lastSeen: entry.time,
+    camId: entry.cam_id,
+    isDrone: entry.isDrone ?? true,
+    distance: prev.distance ?? null,
+    distanceToBase: prev.distanceToBase ?? null,
+    isInside: prev.isInside ?? false,
+    isNearBase: prev.isNearBase ?? false,
+    mgrs: prev.mgrs ?? null,
+    detectedBy: prev.detectedBy ? [...prev.detectedBy] : [],
+  };
+}
+
+function buildLiveIntruders(payload, previous = []) {
+  const previousMap = new Map(previous.map((intruder) => [intruder.id, intruder]));
+  return payload.map((entry) =>
+    createLiveIntruderEntry(entry, previousMap.get(String(entry.droneId))),
+  );
+}
 
 // ฟังก์ชันแปลงองศาให้เป็นเรเดียนสำหรับสูตรคำนวณ
 function toRadians(value) {
@@ -120,7 +202,7 @@ function detectionSummaryHasHit(summary) {
 // คอมโพเนนต์หลักของแดชบอร์ดฝ่ายตั้งรับ
 export default function DefenseDashboard() {
   // ตัวชี้ถึง map และองค์ประกอบในแผนที่
-  const initialIntrudersRef = useRef(createIntruderSeeds(BASE_POSITION));
+  const initialIntrudersRef = useRef(buildLiveIntruders(LIVE_INTRUDER_SAMPLE));
   const mapRef = useRef(null);
   const mapContainerRef = useRef(null);
   const droneMarkerRef = useRef(null);
@@ -207,6 +289,44 @@ export default function DefenseDashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.WebSocket !== "function") {
+      return undefined;
+    }
+
+    let socket;
+    try {
+      socket = new WebSocket(toWebSocketUrl(LIVE_WEBSOCKET_PATH));
+    } catch (error) {
+      console.error("Unable to open live feed socket", error);
+      return undefined;
+    }
+
+    const handleMessage = (event) => {
+      let payload;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+
+      if (!Array.isArray(payload)) {
+        return;
+      }
+
+      setIntruders((prev) => buildLiveIntruders(payload, prev));
+    };
+
+    socket.addEventListener("message", handleMessage);
+
+    return () => {
+      socket.removeEventListener("message", handleMessage);
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.close();
+      }
+    };
+  }, []);
+
   // เก็บสถานะโดรนล่าสุดไว้ใช้งานใน animation
   useEffect(() => {
     latestDroneRef.current = drone;
@@ -227,25 +347,7 @@ export default function DefenseDashboard() {
   }, [drone.position, detectionRadius, basePosition, baseDetectionRadius, baseMgrs, isBaseScanActive]);
 
   useEffect(() => {
-    if (!intruderSeedInitializedRef.current) {
-      intruderSeedInitializedRef.current = true;
-      return;
-    }
-
     baseIntrudersRef.current = new Set();
-    const freshSeeds = createIntruderSeeds(basePosition);
-    initialIntrudersRef.current = freshSeeds;
-    setIntruders(freshSeeds);
-  }, [basePosition]);
-
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      setIntruders((prev) => tickIntruderPositions(prev, basePosition));
-    }, 4000);
-
-    return () => {
-      clearInterval(intervalId);
-    };
   }, [basePosition]);
   useEffect(() => {
     if (!baseMarkerRef.current) return;

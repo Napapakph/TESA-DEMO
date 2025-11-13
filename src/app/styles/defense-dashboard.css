@@ -685,7 +685,7 @@
 }
 
 .history-modal {
-  width: min(1100px, 94vw);
+  width: min(1500px, 94vw);
   max-height: 90vh;
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(56, 189, 248, 0.45);
@@ -887,12 +887,15 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: rgba(148, 197, 255, 0.85);
+  padding: 0 10px;
 }
 
 .history-summary-value {
   font-size: 1.6rem;
-  font-weight: 600;
+  font-weight: 400;
   color: rgba(224, 231, 255, 0.95);
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .history-summary-footnote {

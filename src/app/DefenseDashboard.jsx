@@ -1742,7 +1742,17 @@ export default function DefenseDashboard() {
             <div className="history-layout">
               <section className="history-detail-section history-summary-section">
                 <div className="history-detail-header">
-                  <h3>Detail</h3>
+                  <h3>Detail</h3>               
+                  <div className="history-summary-grid">
+                  <article className="history-summary-card">
+                    <span className="history-summary-label">Total Drones of Detected is <span className="history-summary-value">
+                      {historyTotal.toLocaleString()}
+                    </span> <span className="history-summary-footnote">
+                      Showing {displayedHistoryEntries.length} of {historyTotal.toLocaleString()}
+                    </span></span>
+        
+                  </article>
+                </div>
                   <div className="history-pagination">
                     <button
                       type="button"
@@ -1766,17 +1776,7 @@ export default function DefenseDashboard() {
                   </div>
                 </div>
 
-                <div className="history-summary-grid">
-                  <article className="history-summary-card">
-                    <span className="history-summary-label">Total Drones</span>
-                    <span className="history-summary-value">
-                      {historyTotal.toLocaleString()}
-                    </span>
-                    <span className="history-summary-footnote">
-                      Showing {displayedHistoryEntries.length} of {historyTotal.toLocaleString()}
-                    </span>
-                  </article>
-                </div>
+ 
 
                 <div className="history-table-wrapper">
                   {historyStatus === "loading" ? (
@@ -1785,7 +1785,7 @@ export default function DefenseDashboard() {
                     <div className="history-error">
                       <span>{historyStatus || "Failed to load history data."}</span>
                       <button type="button" onClick={retryHistoryFetch}>
-                        Retryyyy
+                        Retry
                       </button>
                     </div>
                   ) : displayedHistoryEntries.length === 0 ? (

@@ -1978,7 +1978,8 @@
 }
 
 .offence-overlay--collapsed {
-  width: 220px;
+  width: 350px;
+  height: 350px;
 }
 
 .offence-overlay--expanded {
@@ -2032,22 +2033,84 @@
 }
 
 .offence-overlay__body {
-  padding: 16px 18px 18px;
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  padding: 16px 18px 18px;
   color: rgba(203, 213, 225, 0.9);
   font-size: 0.85rem;
   line-height: 1.5;
+  overflow: hidden;
 }
 
-.offence-overlay__body p {
-  margin: 0;
+.offence-overlay__map {
+  position: relative;
+  flex: 1;
+  min-height: 200px;
+  border-radius: 12px;
+  background: radial-gradient(circle at 25% 25%, rgba(59, 130, 246, 0.18), rgba(15, 23, 42, 0.9));
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  overflow: hidden;
 }
 
-.offence-overlay__hint {
+.offence-overlay__map .mapboxgl-canvas,
+.offence-overlay__map .mapboxgl-map {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.offence-overlay__map .mapboxgl-map {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+}
+
+.offence-overlay--expanded .offence-overlay__map {
+  min-height: 0;
+}
+
+.offence-overlay__map.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(148, 163, 184, 0.85);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.offence-overlay__map-placeholder {
+  padding: 12px 16px;
+  text-align: center;
+}
+
+.offence-overlay__status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.2);
   font-size: 0.75rem;
-  color: rgba(148, 163, 184, 0.75);
+}
+
+.offence-overlay__status .error {
+  color: rgba(248, 113, 113, 0.9);
+}
+
+.offence-overlay--collapsed .offence-overlay__body {
+  padding: 14px 16px 16px;
+  gap: 8px;
+}
+
+.offence-overlay--collapsed .offence-overlay__map {
+  flex: 0 0 auto;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  min-height: 0;
 }
 
 @media (max-width: 820px) {

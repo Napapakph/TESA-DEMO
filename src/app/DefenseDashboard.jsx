@@ -1795,13 +1795,13 @@ export default function DefenseDashboard() {
                       <table className="history-table">
                         <thead>
                           <tr>
-                            <th>_id</th>
-                            <th>drone_id</th>
+                            <th>ID Unique Drone</th>
+                            <th>ID Drone</th>
                             <th>type</th>
-                            <th>first_seen</th>
+                            <th>Timestamp</th>
                             <th>side</th>
-                            <th>first_cam_id</th>
-                            <th>image_path</th>
+                            <th>ID Camera</th>
+                            <th>image</th>
                             <th>preview</th>
                           </tr>
                         </thead>
@@ -1892,7 +1892,7 @@ export default function DefenseDashboard() {
                 </div>
               </section>
 
-              <section className="history-detail-section history-selected-section">
+              {/* <section className="history-detail-section history-selected-section">
                 <div className="history-detail-header">
                   <h3>Selected Drone</h3>
                   {historyDetailsStatus === "error" && (
@@ -1923,7 +1923,7 @@ export default function DefenseDashboard() {
                 ) : (
                   <div className="history-empty">Select a drone to view its details.</div>
                 )}
-              </section>
+              </section> */}
 
               <section className="history-detail-section history-logs-section">
                 <div className="history-detail-header">
@@ -1937,7 +1937,7 @@ export default function DefenseDashboard() {
                     >
                       {HISTORY_LOG_SORT_OPTIONS.map((option) => (
                         <option value={option.value} key={option.value}>
-                          Sort: {option.label}
+                          {option.label}
                         </option>
                       ))}
                     </select>
@@ -1949,7 +1949,7 @@ export default function DefenseDashboard() {
                     >
                       {HISTORY_ORDER_OPTIONS.map((option) => (
                         <option value={option.value} key={option.value}>
-                          Order: {option.label}
+                          {option.label}
                         </option>
                       ))}
                     </select>
@@ -1985,6 +1985,7 @@ export default function DefenseDashboard() {
                       Frame log data will appear here once available.
                     </div>
                   ) : (
+                    <div className="history-log-scroll">
                     <ul className="history-log-list">
                       {historyLogs.map((log, index) => (
                         <li className="history-log-item" key={log.id ?? index}>
@@ -2003,6 +2004,7 @@ export default function DefenseDashboard() {
                         </li>
                       ))}
                     </ul>
+                    </div>
                   )
                 ) : (
                   <div className="history-log-placeholder">Select a drone to view its logs.</div>

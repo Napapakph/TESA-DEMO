@@ -685,7 +685,7 @@
 }
 
 .history-modal {
-  width: min(1500px, 94vw);
+  width: min(1600px, 94vw);
   max-height: 90vh;
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(56, 189, 248, 0.45);
@@ -761,7 +761,7 @@
 
 .history-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+ 
   gap: 16px;
   width: 100%;
 }
@@ -773,6 +773,7 @@
 .history-selected-section,
 .history-logs-section {
   min-height: 0;
+  width: 100%;
 }
 
 .history-pagination {
@@ -895,7 +896,6 @@
   font-weight: 400;
   color: rgba(224, 231, 255, 0.95);
   padding-left: 20px;
-  padding-right: 20px;
 }
 
 .history-summary-footnote {
@@ -1051,27 +1051,10 @@
   word-break: break-word;
 }
 
-.history-logs-filters {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 
-.history-logs-filters select,
-.history-logs-filters input,
-.history-logs-filters button {
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(30, 41, 59, 0.6);
-  color: rgba(226, 232, 240, 0.9);
-  font-size: 0.85rem;
-}
-
-.history-logs-filters button:hover {
-  background: rgba(56, 189, 248, 0.25);
-  border-color: rgba(56, 189, 248, 0.5);
+.history-log-scroll {
+  max-height: 320px;
+  overflow: auto;
 }
 
 .history-log-list {
@@ -1126,19 +1109,7 @@
   padding: clamp(16px, 4vw, 32px);
 }
 
-.history-modal {
-  width: min(1100px, 94vw);
-  max-height: 90vh;
-  background: rgba(15, 23, 42, 0.95);
-  border: 1px solid rgba(56, 189, 248, 0.45);
-  border-radius: 18px;
-  box-shadow: 0 24px 48px rgba(8, 11, 20, 0.6);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: clamp(20px, 3vw, 28px);
-  overflow: hidden;
-}
+
 
 .history-header {
   display: flex;
@@ -1248,12 +1219,7 @@
   word-break: break-word;
 }
 
-.history-logs-filters {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+
 
 .history-logs-filters select,
 .history-logs-filters input,
@@ -1264,12 +1230,10 @@
   background: rgba(30, 41, 59, 0.6);
   color: rgba(226, 232, 240, 0.9);
   font-size: 0.85rem;
+  gap : 10px;
+  max-width: 100%;
 }
 
-.history-logs-filters button:hover {
-  background: rgba(56, 189, 248, 0.25);
-  border-color: rgba(56, 189, 248, 0.5);
-}
 
 .history-log-list {
   margin: 0;
@@ -1903,16 +1867,9 @@
     margin-top: clamp(12px, 4vw, 18px);
   }
 
-  .history-modal {
-    width: min(720px, 95vw);
-    max-height: 88vh;
-  }
 
-  .history-layout {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
+
+ 
 
   .history-detail-pane {
     width: 100%;
@@ -1932,12 +1889,6 @@
   .image-viewer-backdrop {
     left: 0;
   }
-
-  .history-modal {
-    width: min(900px, 92vw);
-    padding: clamp(16px, 3vw, 24px);
-  }
-
   .history-layout {
     display: flex;
     flex-direction: column;

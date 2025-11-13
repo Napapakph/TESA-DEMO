@@ -46,7 +46,7 @@ const HISTORY_LOG_SORT_OPTIONS = [
 
 const HISTORY_DEFAULT_FILTERS = Object.freeze({
   type: "all",
-  side: "defensive",
+  side: "def",
   sort: "latest",
   order: "asc",
   page: 1,
@@ -978,7 +978,7 @@ export default function DefenseDashboard() {
         if (historyFilters.type && historyFilters.type !== "all") {
           params.append("type", historyFilters.type);
         }
-        params.append("side", historyFilters.side ?? "defensive");
+        params.append("side", historyFilters.side ?? "def");
         if (historyFilters.sort) {
           params.append("sort", historyFilters.sort);
         }
@@ -987,8 +987,9 @@ export default function DefenseDashboard() {
         }
         params.append("page", String(historyFilters.page));
         params.append("limit", String(historyFilters.limit));
+        console.log("params", params.toString());
 
-        const response = await fetch(`/api/drones?${params.toString()}`, { signal: controller.signal });
+        const response = await fetch(`${SOCKET_URL}api/drones?${params.toString()}`, { signal: controller.signal });
         if (!response.ok) {
           const message = await response.text();
           throw new Error(message || `Failed to load history (${response.status})`);
@@ -1023,6 +1024,7 @@ export default function DefenseDashboard() {
         setHistoryTotal(0);
         setHistoryStatus("error");
         setHistoryError(error.message || "Failed to load history");
+        console.error("Failed to load history:", error);
       }
     };
 
@@ -1051,7 +1053,7 @@ export default function DefenseDashboard() {
       setHistoryDetailsStatus("loading");
       setHistoryDetailsError(null);
       try {
-        const response = await fetch(`/api/drones/${encodeURIComponent(selectedHistoryDrone.id)}`, {
+        const response = await fetch(`${SOCKET_URL}/api/drones/${encodeURIComponent(selectedHistoryDrone.id)}`, {
           signal: controller.signal,
         });
         if (!response.ok) {
@@ -1107,7 +1109,7 @@ export default function DefenseDashboard() {
         params.append("limit", String(historyLogsFilters.limit));
 
         const response = await fetch(
-          `/api/drones/${encodeURIComponent(selectedHistoryDrone.id)}/logs?${params.toString()}`,
+          `${SOCKET_URL}api/drones/${encodeURIComponent(selectedHistoryDrone.id)}/logs?${params.toString()}`,
           { signal: controller.signal },
         );
         if (!response.ok) {
@@ -1691,9 +1693,9 @@ export default function DefenseDashboard() {
                     value={historyFilters.side}
                     onChange={(event) => updateHistoryFilters({ side: event.target.value })}
                   >
-                    <option value="defensive">Defensive</option>
-                    <option value="offensive">Offensive</option>
-                    <option value="all">All</option>
+                    <option value="def">Defensive</option>
+                    <option value="off">Offensive</option>
+                    <option value="">All</option>
                   </select>
                 </label>
                 <label className="history-filter">
@@ -1781,9 +1783,9 @@ export default function DefenseDashboard() {
                     <div className="history-loading">Loading history…</div>
                   ) : historyStatus === "error" ? (
                     <div className="history-error">
-                      <span>{historyError || "Failed to load history data."}</span>
+                      <span>{historyStatus || "Failed to load history data."}</span>
                       <button type="button" onClick={retryHistoryFetch}>
-                        Retry
+                        Retryyyy
                       </button>
                     </div>
                   ) : displayedHistoryEntries.length === 0 ? (
@@ -1895,7 +1897,7 @@ export default function DefenseDashboard() {
                   <h3>Selected Drone</h3>
                   {historyDetailsStatus === "error" && (
                     <button type="button" onClick={retryHistoryDetails}>
-                      Retry
+                      Retryy
                     </button>
                   )}
                 </div>

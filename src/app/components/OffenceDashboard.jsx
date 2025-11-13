@@ -96,37 +96,19 @@ export default function OffenceDashboard() {
   const currentDroneMarkerRef = useRef(null);
 
   useEffect(() => {
-    let isMounted = true;
-    async function fetchToken() {
-      setMapStatus("loading-token");
-      setMapError(null);
-      try {
-        const response = await fetch("/api/mapbox/token");
-        if (!response.ok) {
-          throw new Error(`Failed to fetch token: ${response.status}`);
-        }
-        const data = await response.json();
-        const token =
-          data?.token ??
-          process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN ??
-          null;
-        if (!token) {
-          throw new Error("Mapbox access token is not configured.");
-        }
-        if (isMounted) {
-          setMapboxToken(token);
-          setMapStatus("token-ready");
-        }
-      } catch (error) {
-        if (!isMounted) return;
-        setMapError(error instanceof Error ? error.message : "Unexpected error while loading Mapbox token.");
-        setMapStatus("token-error");
-      }
+    setMapStatus("loading-token");
+    setMapError(null);
+
+    const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN ?? null;
+
+    if (!token || typeof token !== "string" || token.trim().length === 0) {
+      setMapStatus("token-error");
+      setMapError("Mapbox access token is not configured. Set NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN in .env.");
+      return;
     }
-    fetchToken();
-    return () => {
-      isMounted = false;
-    };
+
+    setMapboxToken(token);
+    setMapStatus("token-ready");
   }, []);
 
   useEffect(() => {
@@ -137,7 +119,7 @@ export default function OffenceDashboard() {
     mapboxgl.accessToken = mapboxToken;
     const mapInstance = new mapboxgl.Map({
       container: mapContainerRef.current,
-      style: "mapbox://styles/mapbox/dark-v11",
+      style: "mapbox://styles/mapbox/streets-v12",
       center: [101.2134, 14.2059],
       zoom: 12,
       attributionControl: false,

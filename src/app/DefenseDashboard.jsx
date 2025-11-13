@@ -50,7 +50,7 @@ const HISTORY_DEFAULT_FILTERS = Object.freeze({
   sort: "latest",
   order: "asc",
   page: 1,
-  limit: 20,
+  limit: 10,
 });
 
 const HISTORY_LOGS_DEFAULTS = Object.freeze({
@@ -411,6 +411,7 @@ export default function DefenseDashboard() {
   const [mapTokenReloadKey, setMapTokenReloadKey] = useState(0);
   const [mapStatus, setMapStatus] = useState("idle");
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [cameraExpanded, setCameraExpanded] = useState(true);
   const [selectedDroneForDetail, setSelectedDroneForDetail] = useState(null);
   const [latestDroneExpanded, setLatestDroneExpanded] = useState(true);
   const [lastClicked, setLastClicked] = useState(null);
@@ -431,6 +432,11 @@ export default function DefenseDashboard() {
   const [historyLogsFilters, setHistoryLogsFilters] = useState(() => ({ ...HISTORY_LOGS_DEFAULTS }));
   const [historyDetailsReloadKey, setHistoryDetailsReloadKey] = useState(0);
   const [historyLogsReloadKey, setHistoryLogsReloadKey] = useState(0);
+
+  const displayedHistoryEntries = useMemo(
+    () => historyEntries.slice(0, Math.max(1, historyFilters.limit)),
+    [historyEntries, historyFilters.limit],
+  );
 
   const openImageViewer = useCallback((card) => {
     setImageViewer({ isOpen: true, droneId: card.id, images: card.images });
@@ -470,6 +476,10 @@ export default function DefenseDashboard() {
     setSidebarExpanded((prev) => !prev);
   }, []);
 
+  const toggleCamera = useCallback(() => {
+    setCameraExpanded((prev) => !prev);
+  }, []);
+
   const closeSelectedDetail = useCallback(() => {
     setSelectedDroneForDetail(null);
   }, []);
@@ -506,6 +516,8 @@ export default function DefenseDashboard() {
       }
       if (next.limit < 1) {
         next.limit = 1;
+      } else if (next.limit > 10) {
+        next.limit = 10;
       }
       if (next.page < 1) {
         next.page = 1;
@@ -648,8 +660,10 @@ export default function DefenseDashboard() {
       ];
       return parts.filter(Boolean).join(" • ");
     }
-    return "Camera location: Unknown";
-  }, [cameraLocation, cameraInfoDetails?.name, selectedCameraId]);
+    return "Camera location: " + (cameraInfoDetails?.location ?? "Unknown");
+  }, [cameraInfoDetails?.location ?? "Unknown"]);
+
+ 
 
   const fetchCameraInfo = useCallback(async (camId, token) => {
     if (!camId || !token) {
@@ -673,11 +687,11 @@ export default function DefenseDashboard() {
     setCameraInfoError(null);
 
     try {
-      const response = await fetch(`/api/object-detection/info/${encodeURIComponent(camId)}`, {
+      const response = await fetch(`https://tesa-api.crma.dev/api/object-detection/info/${selectedCameraId}`, {
         method: "GET",
         headers: {
           Accept: "application/json",
-          Authorization: `Bearer ${token}`,
+          "x-camera-token": cameraToken,
         },
         signal: controller.signal,
       });
@@ -1281,7 +1295,7 @@ export default function DefenseDashboard() {
         <aside className={`sidebar-panel${sidebarExpanded ? "" : " collapsed"}`} onClick={(e) => e.stopPropagation()}>
           <div className="sidebar-header">
             <h2>Drone Status</h2>
-            <div className="sidebar-controls">
+            <div className="sidebar-controls" >
               <button
                 type="button"
                 className="expand-collapse-button"
@@ -1531,10 +1545,10 @@ export default function DefenseDashboard() {
         <main className="map-wrapper">
           <div ref={mapContainerRef} className="map-layer" />
           {mapTokenStatus === "loading" && (
-            <div className="map-status-message info">กำลังโหลดแผนที่จาก Mapbox…</div>
+            <div className="map-status-message info"></div>
           )}
           {mapStatus === "initializing" && !mapboxTokenError && (
-            <div className="map-status-message info">กำลังเตรียมแผนที่…</div>
+            <div className="map-status-message info"></div>
           )}
           {mapboxTokenError && (
             <div className="map-status-message error">
@@ -1545,75 +1559,92 @@ export default function DefenseDashboard() {
             </div>
           )}
 
-          <section className="camera-overlay">
-            <form className="camera-form" onSubmit={handleCameraSubmit}>
+          <section className={`camera-overlay${cameraExpanded ? "" : " collapsed"}`}>
+            <div className="camera-overlay-header">
               <h3>Camera Credentials</h3>
-              <label>
-                Camera ID
-                <input
-                  type="text"
-                  value={cameraIdInput}
-                  onChange={(event) => setCameraIdInput(event.target.value)}
-                  placeholder="cam001"
-                />
-              </label>
-              <label>
-                Token
-                <input
-                  type="password"
-                  value={tokenInput}
-                  onChange={(event) => setTokenInput(event.target.value)}
-                  placeholder="••••••"
-                />
-              </label>
-              <button type="submit" className="toolbar-button">
-                Save
+              <button
+                type="button"
+                className="expand-collapse-button-camera"
+                onClick={toggleCamera}
+                title={cameraExpanded ? "Collapse camera panel" : "Expand camera panel"}
+                aria-expanded={cameraExpanded}
+              >
+                {cameraExpanded ? "◀" : "▶"}
               </button>
-            </form>
-            <div className="camera-details">
-              <div className="camera-overview">
-                {selectedCameraId ? (
-                  <>
-                    <div>Camera ID: {cameraInfoDetails?.id ?? selectedCameraId}</div>
-                    <div>Name: {cameraInfoDetails?.name ?? "Unknown"}</div>
-                    <div>Location: {cameraInfoDetails?.location ?? "Unknown"}</div>
-                    <div>Institute: {cameraInfoDetails?.institute ?? cameraInfoDetails?.Institute ?? "—"}</div>
-                    <div>Sort Order: {cameraInfoDetails?.sort ?? "—"}</div>
-                    <div>Token: {cameraInfoDetails?.token ?? (cameraToken ? "••••••" : "Not set")}</div>
-                  </>
-                ) : (
-                  <div className="camera-status camera-idle">No camera selected</div>
-                )}
-              </div>
-
-              <div className="camera-fetch-result">
-                {cameraInfoStatus === "loading" ? (
-                  <div className="camera-status camera-loading">กำลังโหลดข้อมูลกล้อง…</div>
-                ) : cameraInfoStatus === "error" ? (
-                  <div className="camera-status camera-error">
-                    {cameraInfoError || "ไม่สามารถโหลดข้อมูลกล้องได้"}
-                    <button type="button" className="camera-retry-button" onClick={handleRetryCameraInfo}>
-                      ลองใหม่
-                    </button>
-                  </div>
-                ) : cameraInfoStatus === "success" && cameraInfoEntries.length > 0 ? (
-                  <div className="camera-info-grid">
-                    {cameraInfoEntries.map(([key, value]) => (
-                      <div className="camera-info-row" key={key}>
-                        <span className="camera-info-key">{formatLabel(key)}</span>
-                        <span className="camera-info-value">{formatCameraValue(value)}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="camera-status camera-idle">
-                    {selectedCameraId && cameraToken
-                      ? "ไม่มีข้อมูลเพิ่มเติมจากกล้อง"
-                      : "กรอก Camera ID และ Token จากนั้นกด Save เพื่อโหลดข้อมูล"}
-                  </div>
-                )}
-              </div>
             </div>
+
+            {cameraExpanded && (
+              <div className="camera-overlay-body">
+                <form className="camera-form" onSubmit={handleCameraSubmit}>
+                  <label>
+                    Camera ID
+                    <input
+                      type="text"
+                      value={cameraIdInput}
+                      onChange={(event) => setCameraIdInput(event.target.value)}
+                      placeholder="cam001"
+                    />
+                  </label>
+                  <label>
+                    Token
+                    <input
+                      type="password"
+                      value={tokenInput}
+                      onChange={(event) => setTokenInput(event.target.value)}
+                      placeholder="••••••"
+                    />
+                  </label>
+                  <button type="submit" className="toolbar-button">
+                    Save
+                  </button>
+                </form>
+
+                <div className="camera-details">
+                  <div className="camera-overview">
+                    {selectedCameraId ? (
+                      <>
+                        <div>Camera ID: {cameraInfoDetails?.id ?? selectedCameraId}</div>
+                        <div>Name: {cameraInfoDetails?.name ?? "Unknown"}</div>
+                        <div>Location: {cameraInfoDetails?.location ?? "Unknown"}</div>
+                        <div>Institute: {cameraInfoDetails?.institute ?? cameraInfoDetails?.Institute ?? "—"}</div>
+                        <div>Sort Order: {cameraInfoDetails?.sort ?? "—"}</div>
+                        <div>Token: {cameraInfoDetails?.token ?? (cameraToken ? "••••••" : "Not set")}</div>
+                      </>
+                    ) : (
+                      <div className="camera-status camera-idle">No camera selected</div>
+                    )}
+                  </div>
+
+                  <div className="camera-fetch-result">
+                    {cameraInfoStatus === "loading" ? (
+                      <div className="camera-status camera-loading">กำลังโหลดข้อมูลกล้อง…</div>
+                    ) : cameraInfoStatus === "error" ? (
+                      <div className="camera-status camera-error">
+                        {cameraInfoError || "ไม่สามารถโหลดข้อมูลกล้องได้"}
+                        <button type="button" className="camera-retry-button" onClick={handleRetryCameraInfo}>
+                          ลองใหม่
+                        </button>
+                      </div>
+                    ) : cameraInfoStatus === "success" && cameraInfoEntries.length > 0 ? (
+                      <div className="camera-info-grid">
+                        {cameraInfoEntries.map(([key, value]) => (
+                          <div className="camera-info-row" key={key}>
+                            <span className="camera-info-key">{formatLabel(key)}</span>
+                            <span className="camera-info-value">{formatCameraValue(value)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="camera-status camera-idle">
+                        {selectedCameraId && cameraToken
+                          ? "ไม่มีข้อมูลเพิ่มเติมจากกล้อง"
+                          : "กรอก Camera ID และ Token จากนั้นกด Save เพื่อโหลดข้อมูล"}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
 
           <div className="coords-overlay">
@@ -1706,12 +1737,10 @@ export default function DefenseDashboard() {
               </div>
             </section>
 
-            <div className="history-body">
-              <aside className="history-list">
-                <div className="history-list-header">
-                  <div className="history-summary">
-                    Total: {historyTotal.toLocaleString()}
-                  </div>
+            <div className="history-layout">
+              <section className="history-detail-section history-summary-section">
+                <div className="history-detail-header">
+                  <h3>Detail</h3>
                   <div className="history-pagination">
                     <button
                       type="button"
@@ -1726,7 +1755,7 @@ export default function DefenseDashboard() {
                       onClick={() => goToHistoryPage(1)}
                       disabled={
                         historyStatus === "loading" ||
-                        historyEntries.length < historyFilters.limit ||
+                        displayedHistoryEntries.length < historyFilters.limit ||
                         historyFilters.page * historyFilters.limit >= historyTotal
                       }
                     >
@@ -1735,7 +1764,19 @@ export default function DefenseDashboard() {
                   </div>
                 </div>
 
-                <div className="history-list-scroll">
+                <div className="history-summary-grid">
+                  <article className="history-summary-card">
+                    <span className="history-summary-label">Total Drones</span>
+                    <span className="history-summary-value">
+                      {historyTotal.toLocaleString()}
+                    </span>
+                    <span className="history-summary-footnote">
+                      Showing {displayedHistoryEntries.length} of {historyTotal.toLocaleString()}
+                    </span>
+                  </article>
+                </div>
+
+                <div className="history-table-wrapper">
                   {historyStatus === "loading" ? (
                     <div className="history-loading">Loading history…</div>
                   ) : historyStatus === "error" ? (
@@ -1745,150 +1786,225 @@ export default function DefenseDashboard() {
                         Retry
                       </button>
                     </div>
-                  ) : historyEntries.length === 0 ? (
-                    <div className="history-empty">No history data available.</div>
+                  ) : displayedHistoryEntries.length === 0 ? (
+                    <div className="history-empty">No history data on this page.</div>
                   ) : (
-                    historyEntries.map((entry) => {
-                      const isSelected = selectedHistoryDrone?.id === entry.id;
-                      return (
-                        <button
-                          type="button"
-                          key={entry.id}
-                          className={`history-item${isSelected ? " history-item--selected" : ""}`}
-                          onClick={() => handleHistoryItemClick(entry)}
-                        >
-                          <span className="history-item-id">{entry.id}</span>
-                          <span className="history-item-meta">
-                            {entry.type} • {entry.side}
-                          </span>
-                          <span className="history-item-meta">
-                            Camera: {entry.camera}
-                          </span>
-                          <span className="history-item-meta">
-                            {entry.timestamp ? formatDateTime(entry.timestamp) : "Unknown time"}
-                          </span>
-                        </button>
-                      );
-                    })
+                    <div className="history-table-scroll">
+                      <table className="history-table">
+                        <thead>
+                          <tr>
+                            <th>_id</th>
+                            <th>drone_id</th>
+                            <th>type</th>
+                            <th>first_seen</th>
+                            <th>side</th>
+                            <th>first_cam_id</th>
+                            <th>image_path</th>
+                            <th>preview</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {displayedHistoryEntries.map((entry) => {
+                            const raw = entry.raw ?? {};
+                            const dbId = raw._id ?? raw.id ?? entry.id;
+                            const droneId = raw.drone_id ?? raw.droneId ?? entry.id;
+                            const type = raw.type ?? entry.type ?? "—";
+                            const firstSeenValue =
+                              raw.first_seen ??
+                              raw.firstSeen ??
+                              entry.timestamp ??
+                              raw.timestamp ??
+                              entry.lastSeen ??
+                              null;
+                            const firstSeen = firstSeenValue ? formatDateTime(firstSeenValue) : "—";
+                            const side = (raw.side ?? entry.side ?? "—") || "—";
+                            const firstCam =
+                              raw.first_cam_id ??
+                              raw.firstCamId ??
+                              raw.camera_id ??
+                              raw.cameraId ??
+                              entry.camera ??
+                              "—";
+                            const imagePath =
+                              typeof raw.image_path === "string" && raw.image_path.trim().length > 0
+                                ? raw.image_path.trim()
+                                : typeof raw.imagePath === "string" && raw.imagePath.trim().length > 0
+                                ? raw.imagePath.trim()
+                                : null;
+                            const previewSrc =
+                              typeof raw.image_preview === "string" && raw.image_preview.trim().length > 0
+                                ? raw.image_preview.trim()
+                                : typeof raw.image_base64 === "string" && raw.image_base64.trim().length > 0
+                                ? raw.image_base64.trim()
+                                : imagePath;
+                            const isSelected = selectedHistoryDrone?.id === entry.id;
+
+                            return (
+                              <tr
+                                key={entry.id}
+                                className={`history-table-row${isSelected ? " history-table-row--selected" : ""}`}
+                                onClick={() => handleHistoryItemClick(entry)}
+                              >
+                                <td title={String(dbId)}>{String(dbId)}</td>
+                                <td title={String(droneId)}>{String(droneId)}</td>
+                                <td>{type}</td>
+                                <td>{firstSeen}</td>
+                                <td className={`history-table-side history-table-side--${side.toLowerCase()}`}>
+                                  {side}
+                                </td>
+                                <td title={firstCam}>{firstCam}</td>
+                                <td>
+                                  {previewSrc ? (
+                                    <button
+                                      type="button"
+                                      className="history-table-button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        expandImage(previewSrc);
+                                      }}
+                                    >
+                                      View more
+                                    </button>
+                                  ) : (
+                                    "—"
+                                  )}
+                                </td>
+                                <td>
+                                  {previewSrc ? (
+                                    <img
+                                      src={previewSrc}
+                                      alt={`Drone ${droneId}`}
+                                      className="history-table-image"
+                                    />
+                                  ) : (
+                                    "—"
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
-              </aside>
+              </section>
 
-              <section className="history-detail-pane">
-                <div className="history-detail-section">
-                  <div className="history-detail-header">
-                    <h3>Details</h3>
-                    {historyDetailsStatus === "error" && (
-                      <button type="button" onClick={retryHistoryDetails}>
+              <section className="history-detail-section history-selected-section">
+                <div className="history-detail-header">
+                  <h3>Selected Drone</h3>
+                  {historyDetailsStatus === "error" && (
+                    <button type="button" onClick={retryHistoryDetails}>
+                      Retry
+                    </button>
+                  )}
+                </div>
+                {selectedHistoryDrone ? (
+                  historyDetailsStatus === "loading" ? (
+                    <div className="history-loading">Loading drone details…</div>
+                  ) : historyDetailsStatus === "error" ? (
+                    <div className="history-error">
+                      {historyDetailsError || "Failed to load drone details."}
+                    </div>
+                  ) : historyDetails ? (
+                    <div className="history-detail-grid">
+                      {Object.entries(historyDetails).map(([key, value]) => (
+                        <div className="history-detail-row" key={key}>
+                          <span className="history-detail-key">{formatLabel(key)}</span>
+                          <span className="history-detail-value">{formatCameraValue(value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="history-empty">No details available for this drone.</div>
+                  )
+                ) : (
+                  <div className="history-empty">Select a drone to view its details.</div>
+                )}
+              </section>
+
+              <section className="history-detail-section history-logs-section">
+                <div className="history-detail-header">
+                  <h3>Logs</h3>
+                  <div className="history-logs-filters">
+                    <select
+                      value={historyLogsFilters.sort}
+                      onChange={(event) =>
+                        updateHistoryLogsFilters({ sort: event.target.value })
+                      }
+                    >
+                      {HISTORY_LOG_SORT_OPTIONS.map((option) => (
+                        <option value={option.value} key={option.value}>
+                          Sort: {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={historyLogsFilters.order}
+                      onChange={(event) =>
+                        updateHistoryLogsFilters({ order: event.target.value })
+                      }
+                    >
+                      {HISTORY_ORDER_OPTIONS.map((option) => (
+                        <option value={option.value} key={option.value}>
+                          Order: {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min="1"
+                      value={historyLogsFilters.limit}
+                      onChange={(event) => {
+                        const value = Number.parseInt(event.target.value, 10);
+                        updateHistoryLogsFilters({
+                          limit: Number.isNaN(value) ? 1 : value,
+                        });
+                      }}
+                    />
+                    <button type="button" onClick={retryHistoryLogs}>
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                {selectedHistoryDrone ? (
+                  historyLogsStatus === "loading" ? (
+                    <div className="history-loading">Loading drone logs…</div>
+                  ) : historyLogsStatus === "error" ? (
+                    <div className="history-error">
+                      <span>{historyLogsError || "Failed to load drone logs."}</span>
+                      <button type="button" onClick={retryHistoryLogs}>
                         Retry
                       </button>
-                    )}
-                  </div>
-                  {selectedHistoryDrone ? (
-                    historyDetailsStatus === "loading" ? (
-                      <div className="history-loading">Loading drone details…</div>
-                    ) : historyDetailsStatus === "error" ? (
-                      <div className="history-error">
-                        {historyDetailsError || "Failed to load drone details."}
-                      </div>
-                    ) : historyDetails ? (
-                      <div className="history-detail-grid">
-                        {Object.entries(historyDetails).map(([key, value]) => (
-                          <div className="history-detail-row" key={key}>
-                            <span className="history-detail-key">{formatLabel(key)}</span>
-                            <span className="history-detail-value">{formatCameraValue(value)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="history-empty">No details available for this drone.</div>
-                    )
-                  ) : (
-                    <div className="history-empty">Select a drone to view its details.</div>
-                  )}
-                </div>
-
-                <div className="history-detail-section">
-                  <div className="history-detail-header">
-                    <h3>Logs</h3>
-                    <div className="history-logs-filters">
-                      <select
-                        value={historyLogsFilters.sort}
-                        onChange={(event) =>
-                          updateHistoryLogsFilters({ sort: event.target.value })
-                        }
-                      >
-                        {HISTORY_LOG_SORT_OPTIONS.map((option) => (
-                          <option value={option.value} key={option.value}>
-                            Sort: {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        value={historyLogsFilters.order}
-                        onChange={(event) =>
-                          updateHistoryLogsFilters({ order: event.target.value })
-                        }
-                      >
-                        {HISTORY_ORDER_OPTIONS.map((option) => (
-                          <option value={option.value} key={option.value}>
-                            Order: {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="number"
-                        min="1"
-                        value={historyLogsFilters.limit}
-                        onChange={(event) => {
-                          const value = Number.parseInt(event.target.value, 10);
-                          updateHistoryLogsFilters({
-                            limit: Number.isNaN(value) ? 1 : value,
-                          });
-                        }}
-                      />
-                      <button type="button" onClick={retryHistoryLogs}>
-                        Refresh
-                      </button>
                     </div>
-                  </div>
-
-                  {selectedHistoryDrone ? (
-                    historyLogsStatus === "loading" ? (
-                      <div className="history-loading">Loading drone logs…</div>
-                    ) : historyLogsStatus === "error" ? (
-                      <div className="history-error">
-                        <span>{historyLogsError || "Failed to load drone logs."}</span>
-                        <button type="button" onClick={retryHistoryLogs}>
-                          Retry
-                        </button>
-                      </div>
-                    ) : historyLogs.length === 0 ? (
-                      <div className="history-empty">No logs available for this drone.</div>
-                    ) : (
-                      <ul className="history-log-list">
-                        {historyLogs.map((log, index) => (
-                          <li className="history-log-item" key={log.id ?? index}>
-                            <span className="history-log-time">
-                              {log.timestamp ? formatDateTime(log.timestamp) : `Log ${index + 1}`}
-                            </span>
-                            <span className="history-log-meta">
-                              Velocity: {formatVelocity(log.velocity)}
-                            </span>
-                            <span className="history-log-meta">
-                              Direction: {formatDirection(log.direction)}
-                            </span>
-                            <span className="history-log-meta">
-                              Altitude: {log.altitude ?? "—"}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )
+                  ) : historyLogs.length === 0 ? (
+                    <div className="history-log-placeholder">
+                      Frame log data will appear here once available.
+                    </div>
                   ) : (
-                    <div className="history-empty">Select a drone to view its logs.</div>
-                  )}
-                </div>
+                    <ul className="history-log-list">
+                      {historyLogs.map((log, index) => (
+                        <li className="history-log-item" key={log.id ?? index}>
+                          <span className="history-log-time">
+                            {log.timestamp ? formatDateTime(log.timestamp) : `Log ${index + 1}`}
+                          </span>
+                          <span className="history-log-meta">
+                            Velocity: {formatVelocity(log.velocity)}
+                          </span>
+                          <span className="history-log-meta">
+                            Direction: {formatDirection(log.direction)}
+                          </span>
+                          <span className="history-log-meta">
+                            Altitude: {log.altitude ?? "—"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                ) : (
+                  <div className="history-log-placeholder">Select a drone to view its logs.</div>
+                )}
               </section>
             </div>
           </div>
